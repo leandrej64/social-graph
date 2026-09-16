@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Network graph - 3D (cosmos.gl)</title>
+  <style>
+    body { margin: 0; background: #0d0d0d; overflow: hidden; font-family: system-ui, sans-serif; color: #ddd; }
+    #graph { position: fixed; inset: 0; }
+
+    #panel {
+      position: fixed; top: 0; right: 0; bottom: 0; width: 300px;
+      background: #161616; border-left: 1px solid #333;
+      overflow-y: auto; padding: 16px; box-sizing: border-box;
+      font-size: 13px;
+    }
+    #panel h2 { font-size: 15px; margin: 0 0 12px; }
+    #panel h3 { font-size: 13px; margin: 16px 0 6px; color: #9fd; }
+    #panel .highlighted > h3 { color: #fff; font-size: 14px; }
+    #panel label { display: block; padding: 2px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #panel label:hover { color: #fff; }
+    #panel input[type="checkbox"] { margin-right: 6px; }
+    #panel .columns { display: flex; gap: 12px; }
+    #panel .columns > div { flex: 1; min-width: 0; }
+    #panel .columns h4 { font-size: 11px; text-transform: uppercase; color: #888; margin: 0 0 4px; }
+    #others-toggle { cursor: pointer; color: #9fd; user-select: none; margin-top: 16px; display: block; }
+    #others-content { display: none; padding-left: 4px; }
+    #others-content.open { display: block; }
+    #apply-btn {
+      position: sticky; bottom: 0; width: 100%; margin-top: 16px; padding: 10px;
+      background: #2a78d6; color: #fff; border: none; border-radius: 4px;
+      font-size: 13px; cursor: pointer;
+    }
+    #apply-btn:hover { background: #3987e5; }
+    #status { position: fixed; top: 12px; left: 12px; color: #999; font: 12px system-ui, sans-serif; }
+    #legend {
+      position: fixed; top: 36px; left: 12px; color: #ccc;
+      font: 12px system-ui, sans-serif; background: rgba(22,22,22,0.7);
+      padding: 8px 10px; border-radius: 4px;
+    }
+    #legend .row { display: flex; align-items: center; gap: 6px; padding: 2px 0; white-space: nowrap; }
+    #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  </style>
+</head>
+<body>
+  <div id="graph"></div>
+  <div id="status">Loading data...</div>
+  <div id="legend"></div>
+  <div id="panel"></div>
+
+  <!-- cosmos.gl: GPU-accelerated force layout + rendering (see la_graph.html
+       history / conversation for why -- 3d-force-graph didn't scale past a
+       few tens of thousands of elements). UMD build, exposes window.Cosmos. -->
+  <script src="https://cdn.jsdelivr.net/npm/@cosmograph/cosmos@2.5.1/dist/index.min.js"></script>
+  <script>
+    const DATA_DIR = 'data';
+    let filtersData = null;
+    let edges = null; // Int32Array, interleaved [source0, target0, source1, target1, ...]
+    let graph = null; // current Cosmos.Graph instance, recreated on every filter change
+
+    const CATEGORICAL_PALETTE = [
+      '#2a78d6', '#eb6834', '#1baf7a', '#eda100',
+      '#e87ba4', '#008300', '#4a3aa7', '#e34948',
+    ];
+    const OTHER_COLOR = '#6b6b6b';
+    const UNKNOWN_COLOR_RGBA = [0.55, 0.55, 0.55, 0.35];
+
+    function hexToRgba(hex, alpha) {
+      return [
+        parseInt(hex.slice(1, 3), 16) / 255,
+        parseInt(hex.slice(3, 5), 16) / 255,
+        parseInt(hex.slice(5, 7), 16) / 255,
+        alpha,
+      ];
+    }
+
+    // --- Load raw data once ---
+    Promise.all([
+      fetch(`${DATA_DIR}/filters.json`).then(r => r.json()),
+      fetch(`${DATA_DIR}/graph_edges.bin`).then(r => r.arrayBuffer()),
+    ]).then(([filters, edgeBuffer]) => {
+      filtersData = filters;
+      edges = new Int32Array(edgeBuffer);
+      document.getElementById('status').textContent =
+        `Loaded: ${filters.node_count.toLocaleString()} profiles, ${(edges.length/2).toLocaleString()} edges`;
+      buildPanel(filters);
+      applyDefaultFilters();
+    });
+
+    // Default view for anyone landing on the page: LA, San Diego, San
+    // Francisco, Berlin, Hamburg, Munich, shell (unconnected nodes) hidden.
+    function applyDefaultFilters() {
+      const defaults = [
+        'f:city:US:los_angeles', 'f:city:US:san_diego', 'f:city:US:san_francisco',
+        'f:city:DE:berlin', 'f:city:DE:hamburg', 'f:city:DE:munich',
+      ];
+      for (const id of defaults) {
+        const box = document.getElementById(id);
+        if (box) box.checked = true;
+      }
+      document.getElementById('hide-isolated').checked = true;
+      applyFilters();
+    }
+
+    // --- Build the filter panel DOM from filters.json ---
+    function checkbox(id, label, count) {
+      const wrap = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = id;
+      wrap.appendChild(cb);
+      wrap.append(`${label} (${count.toLocaleString()})`);
+      return wrap;
+    }
+
+    function buildPanel(filters) {
+      const panel = document.getElementById('panel');
+      panel.innerHTML = '';
+
+      const title = document.createElement('h2');
+      title.textContent = 'Filters';
+      panel.appendChild(title);
+
+      // Unknown, standalone, always visible.
+      panel.appendChild(checkbox('f:unknown', filters.unknown.label, filters.unknown.indices.length));
+
+      const others = {};
+      for (const [code, entry] of Object.entries(filters.countries)) {
+        if (filters.highlighted.includes(code)) continue;
+        others[code] = entry;
+      }
+
+      // Highlighted countries (US, DE): expanded, cities always shown; US
+      // also gets a second column for states.
+      for (const code of filters.highlighted) {
+        const entry = filters.countries[code];
+        const section = document.createElement('div');
+        section.className = 'highlighted';
+        const h3 = document.createElement('h3');
+        h3.appendChild(checkboxInline(`f:country:${code}`, entry.label, entry.indices.length));
+        section.appendChild(h3);
+
+        const cols = document.createElement('div');
+        cols.className = 'columns';
+
+        const cityCol = document.createElement('div');
+        const cityH4 = document.createElement('h4');
+        cityH4.textContent = 'Cities';
+        cityCol.appendChild(cityH4);
+        for (const [slug, city] of Object.entries(entry.cities)) {
+          cityCol.appendChild(checkbox(`f:city:${code}:${slug}`, city.label, city.indices.length));
+        }
+        cols.appendChild(cityCol);
+
+        if (entry.states) {
+          const stateCol = document.createElement('div');
+          const stateH4 = document.createElement('h4');
+          stateH4.textContent = 'States';
+          stateCol.appendChild(stateH4);
+          for (const [slug, state] of Object.entries(entry.states)) {
+            stateCol.appendChild(checkbox(`f:state:${slug}`, state.label, state.indices.length));
+          }
+          cols.appendChild(stateCol);
+        }
+
+        section.appendChild(cols);
+        panel.appendChild(section);
+      }
+
+      // Others: collapsible, one sub-list per remaining country with its cities nested.
+      const othersToggle = document.createElement('span');
+      othersToggle.id = 'others-toggle';
+      othersToggle.textContent = '▸ Others';
+      panel.appendChild(othersToggle);
+
+      const othersContent = document.createElement('div');
+      othersContent.id = 'others-content';
+      for (const [code, entry] of Object.entries(others)) {
+        const h3 = document.createElement('h3');
+        h3.appendChild(checkboxInline(`f:country:${code}`, entry.label, entry.indices.length));
+        othersContent.appendChild(h3);
+        for (const [slug, city] of Object.entries(entry.cities)) {
+          const l = checkbox(`f:city:${code}:${slug}`, city.label, city.indices.length);
+          l.style.paddingLeft = '12px';
+          othersContent.appendChild(l);
+        }
+      }
+      panel.appendChild(othersContent);
+
+      othersToggle.addEventListener('click', () => {
+        const open = othersContent.classList.toggle('open');
+        othersToggle.textContent = (open ? '▾ ' : '▸ ') + 'Others';
+      });
+
+      const isolatedWrap = document.createElement('label');
+      isolatedWrap.style.marginTop = '16px';
+      const isolatedCb = document.createElement('input');
+      isolatedCb.type = 'checkbox';
+      isolatedCb.id = 'hide-isolated';
+      isolatedWrap.appendChild(isolatedCb);
+      isolatedWrap.append('Hide nodes with no connections');
+      panel.appendChild(isolatedWrap);
+
+      const applyBtn = document.createElement('button');
+      applyBtn.id = 'apply-btn';
+      applyBtn.textContent = 'Update graph';
+      applyBtn.addEventListener('click', applyFilters);
+      panel.appendChild(applyBtn);
+    }
+
+    function checkboxInline(id, label, count) {
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = id;
+      const frag = document.createDocumentFragment();
+      frag.appendChild(cb);
+      frag.append(` ${label} (${count.toLocaleString()})`);
+      return frag;
+    }
+
+    // --- Resolve every checked checkbox back to its {label, indices} entry ---
+    function selectedGroups() {
+      const groups = [];
+      if (document.getElementById('f:unknown').checked) {
+        groups.push({ key: 'unknown', label: filtersData.unknown.label, indices: filtersData.unknown.indices, isUnknown: true });
+      }
+      for (const [code, entry] of Object.entries(filtersData.countries)) {
+        const countryBox = document.getElementById(`f:country:${code}`);
+        if (countryBox && countryBox.checked) {
+          groups.push({ key: `country:${code}`, label: entry.label, indices: entry.indices });
+        }
+        for (const [slug, city] of Object.entries(entry.cities)) {
+          const box = document.getElementById(`f:city:${code}:${slug}`);
+          if (box && box.checked) {
+            groups.push({ key: `city:${code}:${slug}`, label: city.label, indices: city.indices });
+          }
+        }
+        if (entry.states) {
+          for (const [slug, state] of Object.entries(entry.states)) {
+            const box = document.getElementById(`f:state:${slug}`);
+            if (box && box.checked) {
+              groups.push({ key: `state:${slug}`, label: state.label, indices: state.indices });
+            }
+          }
+        }
+      }
+      return groups;
+    }
+
+    // --- Build the induced subgraph from the checked groups and (re)render ---
+    function applyFilters() {
+      const groups = selectedGroups();
+      if (groups.length === 0) {
+        document.getElementById('status').textContent = 'Pick at least one filter, then hit "Update graph".';
+        return;
+      }
+
+      // Rank groups by size (excluding "unknown", which always stays a
+      // separate dim color) so the biggest, most visually dominant
+      // clusters get the palette's most distinguishable slots -- same
+      // logic as before, just over whatever is currently checked.
+      const known = groups.filter(g => !g.isUnknown).sort((a, b) => b.indices.length - a.indices.length);
+      const groupColor = {};
+      const groupHex = {}; // same assignment, kept as plain hex for the legend swatches
+      known.forEach((g, i) => {
+        const hex = i < CATEGORICAL_PALETTE.length ? CATEGORICAL_PALETTE[i] : OTHER_COLOR;
+        groupColor[g.key] = hexToRgba(hex, 1);
+        groupHex[g.key] = hex;
+      });
+      buildLegend(known, groupHex, groups.some(g => g.isUnknown));
+
+      // node -> owning group (first match wins; groups are pushed in
+      // city -> state -> country -> unknown order per country block above,
+      // so a node in both a checked city and its checked country reads as
+      // the city -- the finer-grained label).
+      const nodeGroup = new Map();
+      for (const g of groups) {
+        for (const idx of g.indices) {
+          if (!nodeGroup.has(idx)) nodeGroup.set(idx, g);
+        }
+      }
+
+      const selectedIndices = [...nodeGroup.keys()];
+      // Typed array instead of a Map for the ~3M lookups in the edge scan
+      // below (2 per edge x ~1.49M edges) -- indexed access on a typed
+      // array beats Map.get() for a numeric key space this size.
+      const localIndex = new Int32Array(filtersData.node_count).fill(-1);
+      selectedIndices.forEach((globalIdx, i) => { localIndex[globalIdx] = i; });
+
+      const positions = new Float32Array(selectedIndices.length * 3);
+      for (let i = 0; i < positions.length; i++) positions[i] = (Math.random() - 0.5) * 2000;
+
+      const colors = new Float32Array(selectedIndices.length * 4);
+      const sizes = new Float32Array(selectedIndices.length);
+      selectedIndices.forEach((globalIdx, i) => {
+        const g = nodeGroup.get(globalIdx);
+        const c = g.isUnknown ? UNKNOWN_COLOR_RGBA : groupColor[g.key];
+        colors.set(c, i * 4);
+        sizes[i] = g.isUnknown ? 2 : 4;
+      });
+
+      // Linear scan over the full edge list, keep only edges where both
+      // endpoints made it into the selection.
+      const linkPairs = [];
+      for (let e = 0; e < edges.length; e += 2) {
+        const ls = localIndex[edges[e]], lt = localIndex[edges[e + 1]];
+        if (ls !== -1 && lt !== -1) linkPairs.push(ls, lt);
+      }
+      let links = new Int32Array(linkPairs);
+      let finalPositions = positions, finalColors = colors, finalSizes = sizes;
+      let nodeCount = selectedIndices.length;
+
+      if (document.getElementById('hide-isolated').checked) {
+        // Exact criterion, not a distance-from-center proxy: degree 0 in
+        // THIS filtered subgraph -- computed directly from the links we
+        // just built, robust to any change in the physics parameters.
+        const degree = new Uint32Array(nodeCount);
+        for (let e = 0; e < links.length; e += 2) { degree[links[e]]++; degree[links[e + 1]]++; }
+
+        const remap = new Int32Array(nodeCount).fill(-1);
+        let kept = 0;
+        const keptPositions = [], keptColors = [], keptSizes = [];
+        for (let i = 0; i < nodeCount; i++) {
+          if (degree[i] === 0) continue;
+          remap[i] = kept;
+          keptPositions.push(positions[i*3], positions[i*3+1], positions[i*3+2]);
+          keptColors.push(colors[i*4], colors[i*4+1], colors[i*4+2], colors[i*4+3]);
+          keptSizes.push(sizes[i]);
+          kept++;
+        }
+
+        const remappedLinks = new Int32Array(links.length);
+        for (let e = 0; e < links.length; e++) remappedLinks[e] = remap[links[e]];
+
+        finalPositions = new Float32Array(keptPositions);
+        finalColors = new Float32Array(keptColors);
+        finalSizes = new Float32Array(keptSizes);
+        links = remappedLinks;
+        nodeCount = kept;
+      }
+
+      document.getElementById('status').textContent =
+        `${nodeCount.toLocaleString()} nodes, ${(links.length/2).toLocaleString()} edges`;
+
+      renderGraph(finalPositions, finalColors, finalSizes, links);
+    }
+
+    // --- Legend: one swatch per currently-selected group, same color
+    // assignment as the render (one color = one city/state/country). ---
+    function buildLegend(known, groupHex, hasUnknown) {
+      const legend = document.getElementById('legend');
+      legend.innerHTML = '';
+      for (const g of known) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const sw = document.createElement('span');
+        sw.className = 'swatch';
+        sw.style.background = groupHex[g.key];
+        row.appendChild(sw);
+        row.append(g.label);
+        legend.appendChild(row);
+      }
+      if (hasUnknown) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const sw = document.createElement('span');
+        sw.className = 'swatch';
+        sw.style.background = 'rgba(140,140,140,0.5)';
+        row.appendChild(sw);
+        row.append('Unknown Location');
+        legend.appendChild(row);
+      }
+    }
+
+    // --- (Re)create the Cosmos.Graph instance for a fresh selection ---
+    function renderGraph(positions, colors, sizes, links) {
+      if (graph) {
+        graph.pause();
+        graph = null;
+        document.getElementById('graph').innerHTML = '';
+      }
+
+      const ALPHA_STOP_THRESHOLD = 0.1;
+
+      graph = new Cosmos.Graph(document.getElementById('graph'), {
+        spaceDimensions: 3,
+        spaceSize: 16384,
+        backgroundColor: '#1d1d1d',
+        pointDefaultSize: 4,
+        pointSphereShading: true,
+        renderLinks: true,
+        linkDefaultColor: '#8899aa',
+        linkOpacity: 0.3,
+        linkDefaultWidth: 0.5,
+        simulationRepulsion: 10,
+        simulationLinkSpring: 1,
+        simulationLinkDistance: 40,
+        simulationGravity: 0.25,
+        simulationCollision: 1,
+        simulationDecay: 5000,
+        // Root cause of "graph sits off-screen until the recenter fires":
+        // the library's own one-time auto-fit-on-init frames the RAW
+        // initial random positions, before they get rescaled into
+        // [0, spaceSize]. That's a one-off mis-fit, not a continuous
+        // drift -- our physics (repulsion+gravity+decay) only ever
+        // *contracts* the initial random cloud towards the settled
+        // cluster, it never grows past the initial extent. So correct it
+        // exactly once, on the very first tick (nothing is visibly
+        // rendered to the user yet at that point, so the instant snap
+        // isn't seen), instead of re-fitting every few ticks throughout
+        // the whole run -- that repeated instant snapping is what was
+        // causing the visible jank/saccades.
+        onSimulationTick: (() => {
+          let tickCount = 0;
+          return (alpha) => {
+            tickCount++;
+            if (tickCount === 1) graph.fitView(0);
+            if (alpha < ALPHA_STOP_THRESHOLD) graph.pause();
+          };
+        })(),
+        onSimulationEnd: () => recenterCamera(),
+      });
+
+      graph.setPointPositions(positions, { dimensions: 3 });
+      graph.setPointColors(colors);
+      graph.setPointSizes(sizes);
+      graph.setLinks(links);
+      graph.render();
+      graph.start();
+
+      setTimeout(() => {
+        if (graph) { graph.pause(); recenterCamera(); }
+      }, 5000);
+    }
+
+    function recenterCamera() {
+      if (!graph) return;
+      // fitView() (not setCameraState) on purpose: its own docs flag that
+      // setCameraState can leave the near/far clipping planes sized for a
+      // stale scene radius when the actual point cloud's extent changes a
+      // lot between renders (e.g. hiding the isolated-node shell shrinks
+      // it sharply) -- points then clip in/out of view while rotating.
+      // fitView() recomputes the camera framing AND those clipping limits
+      // together. Calling it here (after the simulation has settled, not
+      // at graph-init time) avoids the earlier bug where the library's own
+      // automatic on-init fitView ran before positions were rescaled into
+      // their final coordinate space. A short animated duration (instead
+      // of the instant 0ms used for the tick-1 init correction) makes this
+      // final zoom-to-fit read as an intentional camera move rather than a
+      // jarring snap.
+      graph.fitView(300);
+
+      // Diagnostics: log the actual data extent vs. what the camera ended
+      // up with, and vs. spaceSize -- to see numerically whether there's a
+      // clipping-relevant mismatch rather than guess further blindly.
+      const pos = graph.getPointPositions({ dimensions: 3 });
+      let cx = 0, cy = 0, cz = 0;
+      for (let i = 0; i < pos.length; i += 3) { cx += pos[i]; cy += pos[i + 1]; cz += pos[i + 2]; }
+      const n = pos.length / 3;
+      cx /= n; cy /= n; cz /= n;
+      let maxDist = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        const dx = pos[i] - cx, dy = pos[i + 1] - cy, dz = pos[i + 2] - cz;
+        maxDist = Math.max(maxDist, Math.sqrt(dx * dx + dy * dy + dz * dz));
+      }
+      console.log('[diag] data centroid:', [cx, cy, cz], 'bounding radius:', maxDist);
+      console.log('[diag] camera state after fitView():', graph.getCameraState());
+    }
+  </script>
+</body>
+</html>
