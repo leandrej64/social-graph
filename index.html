@@ -49,10 +49,25 @@
 
   <!-- cosmos.gl: GPU-accelerated force layout + rendering (see la_graph.html
        history / conversation for why -- 3d-force-graph didn't scale past a
-       few tens of thousands of elements). UMD build, exposes window.Cosmos. -->
+       few tens of thousands of elements). UMD build, exposes window.Cosmos.
+       Stayed on the 2.x line (@cosmograph/cosmos) on purpose: 3.x
+       (@cosmos.gl/graph) dropped 3D support entirely (2D-only point
+       positions, no spaceDimensions, no getCameraState) in exchange for
+       `linkBlending: false` -- not worth losing 3D for. Link rendering
+       (not point count or collision) is the real perf bottleneck on dense
+       graphs at this version; mitigated instead by only rendering links
+       when "Unknown Location" isn't part of the selection (see
+       applyFilters/renderGraph). -->
   <script src="https://cdn.jsdelivr.net/npm/@cosmograph/cosmos@2.5.1/dist/index.min.js"></script>
   <script>
     const DATA_DIR = 'data';
+    // Must match the `spaceSize` passed to Cosmos.Graph below. cosmos.gl's
+    // own doc examples only ever show non-negative point coordinates
+    // (e.g. (0,0), (1,0), (0.5,1)) -- it expects points inside [0, SPACE_SIZE],
+    // not an arbitrary centered-at-zero range. Feeding it a centered range
+    // (e.g. [-1000,1000]) gets silently clipped/distorted instead of erroring,
+    // which is what produced the camera "drift" bugs.
+    const SPACE_SIZE = 8192;
     let filtersData = null;
     let edges = null; // Int32Array, interleaved [source0, target0, source1, target1, ...]
     let graph = null; // current Cosmos.Graph instance, recreated on every filter change
@@ -287,7 +302,7 @@
       selectedIndices.forEach((globalIdx, i) => { localIndex[globalIdx] = i; });
 
       const positions = new Float32Array(selectedIndices.length * 3);
-      for (let i = 0; i < positions.length; i++) positions[i] = (Math.random() - 0.5) * 2000;
+      for (let i = 0; i < positions.length; i++) positions[i] = SPACE_SIZE / 2 + (Math.random() - 0.5) * 2000;
 
       const colors = new Float32Array(selectedIndices.length * 4);
       const sizes = new Float32Array(selectedIndices.length);
@@ -341,7 +356,13 @@
       document.getElementById('status').textContent =
         `${nodeCount.toLocaleString()} nodes, ${(links.length/2).toLocaleString()} edges`;
 
-      renderGraph(finalPositions, finalColors, finalSizes, links);
+      // "Unknown Location" alone is 580k of the 746k total profiles -- by
+      // far the single biggest lever for landing in the slow regime.
+      // Link rendering (not point count or collision) is what actually
+      // lags at that scale, so use it as the switch: keep edges visible
+      // for any other selection, drop them the moment Unknown is checked.
+      const hasUnknown = groups.some(g => g.isUnknown);
+      renderGraph(finalPositions, finalColors, finalSizes, links, !hasUnknown);
     }
 
     // --- Legend: one swatch per currently-selected group, same color
@@ -372,7 +393,7 @@
     }
 
     // --- (Re)create the Cosmos.Graph instance for a fresh selection ---
-    function renderGraph(positions, colors, sizes, links) {
+    function renderGraph(positions, colors, sizes, links, showLinks) {
       if (graph) {
         graph.pause();
         graph = null;
@@ -383,11 +404,11 @@
 
       graph = new Cosmos.Graph(document.getElementById('graph'), {
         spaceDimensions: 3,
-        spaceSize: 16384,
+        spaceSize: SPACE_SIZE,
         backgroundColor: '#1d1d1d',
         pointDefaultSize: 4,
         pointSphereShading: true,
-        renderLinks: true,
+        renderLinks: showLinks,
         linkDefaultColor: '#8899aa',
         linkOpacity: 0.3,
         linkDefaultWidth: 0.5,
@@ -395,20 +416,23 @@
         simulationLinkSpring: 1,
         simulationLinkDistance: 40,
         simulationGravity: 0.25,
-        simulationCollision: 1,
+        simulationCollision: 0,
         simulationDecay: 5000,
-        // Root cause of "graph sits off-screen until the recenter fires":
-        // the library's own one-time auto-fit-on-init frames the RAW
-        // initial random positions, before they get rescaled into
-        // [0, spaceSize]. That's a one-off mis-fit, not a continuous
-        // drift -- our physics (repulsion+gravity+decay) only ever
-        // *contracts* the initial random cloud towards the settled
-        // cluster, it never grows past the initial extent. So correct it
-        // exactly once, on the very first tick (nothing is visibly
-        // rendered to the user yet at that point, so the instant snap
-        // isn't seen), instead of re-fitting every few ticks throughout
-        // the whole run -- that repeated instant snapping is what was
-        // causing the visible jank/saccades.
+        // Root cause of "graph drifts right then snaps to center at the
+        // 5s timeout": initial positions used to be generated centered on
+        // (0,0,0) (e.g. (Math.random()-0.5)*2000), but cosmos.gl expects
+        // point coordinates inside [0, SPACE_SIZE] -- feeding it a
+        // centered/negative range got silently clipped instead of
+        // erroring, placing the cloud far from the space's real center
+        // and letting gravity visibly drag it back over the first few
+        // seconds. Fixed by generating positions centered on
+        // SPACE_SIZE/2 instead, so the cloud starts where gravity already
+        // wants it -- confirmed via diagnostic centroid logging (tick 1
+        // centroid landed on ~(4096,4096,4096) = SPACE_SIZE/2, stable
+        // from tick 1 onward, no drift). The one-time fitView(0) on tick
+        // 1 (rather than every few ticks) is enough to frame it correctly
+        // for the whole run, without the instant-snap jank of periodic
+        // re-fitting.
         onSimulationTick: (() => {
           let tickCount = 0;
           return (alpha) => {
