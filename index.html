@@ -28,6 +28,17 @@
     }
     #panel-toggle:hover { background: #202020; color: #fff; }
     #panel-toggle.collapsed { right: 0; }
+
+    /* README link, top-right corner. Slides left to clear the panel while
+       it's open, same mechanism as #panel-toggle above. */
+    #readme-link {
+      position: fixed; top: 14px; right: 12px; z-index: 12;
+      color: #888; font: 12px system-ui, sans-serif; text-decoration: none;
+      transition: right 0.25s ease;
+    }
+    #readme-link:hover { color: #fff; }
+    #readme-link.panel-open { right: 312px; }
+
     #panel h2 { font-size: 15px; margin: 0 0 12px; }
     #panel h3 { font-size: 13px; margin: 16px 0 6px; color: #9fd; }
     #panel .highlighted > h3 { color: #fff; font-size: 14px; }
@@ -52,17 +63,29 @@
     }
     #apply-btn:hover { background: #3987e5; }
     #status { position: fixed; top: 12px; left: 12px; color: #999; font: 12px system-ui, sans-serif; }
+    /* No card/frame on purpose -- the swatches and labels sit straight on
+       the graph's own background. A soft text/drop shadow keeps them
+       legible over bright points instead of a background plate. */
     #legend {
       position: fixed; top: 36px; left: 12px; color: #ccc;
-      font: 12px system-ui, sans-serif; background: rgba(22,22,22,0.7);
-      padding: 8px 10px; border-radius: 4px;
+      font: 12px system-ui, sans-serif;
     }
-    #legend .row { display: flex; align-items: center; gap: 6px; padding: 2px 0; white-space: nowrap; }
-    #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    #legend .row {
+      display: flex; align-items: center; gap: 6px; padding: 2px 0; white-space: nowrap;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7);
+    }
+    /* Gap above the first row of a new country's cluster (see countryOfKey
+       in renderLegend) -- purely spacing, no printed country name unless
+       that country's own checkbox made it a row of its own. */
+    #legend .row.group-start { margin-top: 10px; }
+    #legend .swatch {
+      width: 10px; height: 10px; border-radius: 50%; flex: none;
+      box-shadow: 0 0 4px rgba(0,0,0,0.85);
+    }
     #legend .label { flex: 1; padding-right: 10px; }
     #legend .eye {
       display: flex; align-items: center; background: none; border: none;
-      padding: 0; color: #aaa; cursor: pointer;
+      padding: 0; color: #aaa; cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9));
     }
     #legend .eye:hover { color: #fff; }
     #legend .row.off .label { opacity: 0.45; text-decoration: line-through; }
@@ -164,6 +187,8 @@
   </div>
 
   <div id="recap" hidden></div>
+
+  <a id="readme-link" href="https://github.com/leandrej64/social-graph#readme" target="_blank" rel="noopener">README</a>
 
   <!-- cosmos.gl: GPU-accelerated force layout + rendering (see la_graph.html
        history / conversation for why -- 3d-force-graph didn't scale past a
@@ -648,7 +673,10 @@
       return i;
     }
 
-    function addLegendRow(vs, key, css, text) {
+    // groupStart: this row opens a new country's cluster -- just a bit of
+    // extra space above it, no printed name (the country's own row, if
+    // it's checked, already says so).
+    function addLegendRow(vs, key, css, text, groupStart) {
       const ki = registerKey(vs, key);
       const row = document.createElement('div');
       const sw = document.createElement('span');
@@ -662,7 +690,7 @@
       btn.type = 'button';
       const sync = () => {
         const off = !!vs.dimFlag[ki];
-        row.className = off ? 'row off' : 'row';
+        row.className = (off ? 'row off' : 'row') + (groupStart ? ' group-start' : '');
         btn.innerHTML = off ? ICON_EYE_OFF : ICON_EYE;
         btn.title = off ? 'Show these points again' : 'Dim these points';
       };
@@ -678,10 +706,41 @@
       document.getElementById('legend').appendChild(row);
     }
 
+    // Which country a legend key belongs to, so cities/states/the country
+    // row of the same country can be clustered together (see renderLegend).
+    // Cities and the country row carry their code in the key; a state's key
+    // is just its slug, so its country is found by checking which
+    // highlighted country lists that slug (only one does, in practice --
+    // states only exist for US in this data, but nothing here assumes that).
+    function countryOfKey(key) {
+      if (key.startsWith('city:')) return key.split(':')[1];
+      if (key.startsWith('country:')) return key.slice('country:'.length);
+      if (key.startsWith('state:')) {
+        const slug = key.slice('state:'.length);
+        for (const [code, entry] of Object.entries(filtersData.countries)) {
+          if (entry.states && slug in entry.states) return code;
+        }
+      }
+      return null; // "unknown", "other-inferred": no country to cluster with
+    }
+
     function renderLegend(vs) {
       document.getElementById('legend').innerHTML = '';
-      for (const g of vs.legendGroups) addLegendRow(vs, g.key, vs.groupHex[g.key], g.label);
-      if (vs.hasUnknown) addLegendRow(vs, 'unknown', 'rgba(140,140,140,0.5)', 'Unknown Location');
+      // Cluster by country (first-seen order, so the biggest group's
+      // country still leads) with a gap between clusters; a country with no
+      // grouping (unknown/other-inferred) never gets that gap treatment.
+      const buckets = new Map();
+      for (const g of vs.legendGroups) {
+        const cc = countryOfKey(g.key);
+        if (!buckets.has(cc)) buckets.set(cc, []);
+        buckets.get(cc).push(g);
+      }
+      let firstBucket = true;
+      for (const groups of buckets.values()) {
+        groups.forEach((g, i) => addLegendRow(vs, g.key, vs.groupHex[g.key], g.label, i === 0 && !firstBucket));
+        firstBucket = false;
+      }
+      if (vs.hasUnknown) addLegendRow(vs, 'unknown', 'rgba(140,140,140,0.5)', 'Unknown Location', !firstBucket);
       for (const e of vs.extras) addLegendRow(vs, e.key, e.css, e.text);
     }
 
@@ -983,6 +1042,7 @@
         btn.classList.toggle('collapsed', collapsed);
         btn.innerHTML = collapsed ? '&lsaquo;' : '&rsaquo;';
         btn.setAttribute('aria-label', collapsed ? 'Show filters panel' : 'Hide filters panel');
+        document.getElementById('readme-link').classList.toggle('panel-open', !collapsed); // stay clear of the open panel
       });
     })();
 
@@ -1398,6 +1458,8 @@
       box.scrollTop = 0;
     }
 
+    // Explanation now lives entirely in the README (linked top-right); see
+    // that file for what the page shows and how to use it.
     document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
 
     // =====================================================================
