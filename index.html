@@ -12,7 +12,22 @@
       background: #161616; border-left: 1px solid #333;
       overflow-y: auto; padding: 16px; box-sizing: border-box;
       font-size: 13px;
+      transition: transform 0.25s ease;
     }
+    #panel.collapsed { transform: translateX(100%); }
+    /* Small tab on the panel's left edge, vertically centred, that slides
+       the panel fully off-screen. `right` tracks the panel's left edge
+       (300px when open, 0 once it has slid away) so the tab always stays
+       reachable at the viewport's edge. */
+    #panel-toggle {
+      position: fixed; top: 50%; right: 300px; transform: translateY(-50%);
+      width: 18px; height: 56px; padding: 0; border: 1px solid #333; border-right: none;
+      border-radius: 6px 0 0 6px; background: #161616; color: #9fd;
+      font-size: 12px; line-height: 1; cursor: pointer; z-index: 11;
+      transition: right 0.25s ease;
+    }
+    #panel-toggle:hover { background: #202020; color: #fff; }
+    #panel-toggle.collapsed { right: 0; }
     #panel h2 { font-size: 15px; margin: 0 0 12px; }
     #panel h3 { font-size: 13px; margin: 16px 0 6px; color: #9fd; }
     #panel .highlighted > h3 { color: #fff; font-size: 14px; }
@@ -25,6 +40,11 @@
     #others-toggle { cursor: pointer; color: #9fd; user-select: none; margin-top: 16px; display: block; }
     #others-content { display: none; padding-left: 4px; }
     #others-content.open { display: block; }
+    .more-toggle { cursor: pointer; color: #9fd; user-select: none; margin: 4px 0 2px; display: block; font-size: 12px; }
+    /* #panel-scoped to outweigh `#panel .columns { display: flex }` (same
+       specificity would otherwise leave source order deciding which wins). */
+    #panel .more-content { display: none; margin-top: 4px; }
+    #panel .more-content.open { display: flex; }
     #apply-btn {
       position: sticky; bottom: 0; width: 100%; margin-top: 16px; padding: 10px;
       background: #2a78d6; color: #fff; border: none; border-radius: 4px;
@@ -39,13 +59,111 @@
     }
     #legend .row { display: flex; align-items: center; gap: 6px; padding: 2px 0; white-space: nowrap; }
     #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    #legend .label { flex: 1; padding-right: 10px; }
+    #legend .eye {
+      display: flex; align-items: center; background: none; border: none;
+      padding: 0; color: #aaa; cursor: pointer;
+    }
+    #legend .eye:hover { color: #fff; }
+    #legend .row.off .label { opacity: 0.45; text-decoration: line-through; }
+    #legend .row.off .swatch { opacity: 0.3; }
+
+    /* Bottom-left stack: city inference, brand footer below it. A flex
+       column anchored by `bottom` on the container itself, so the whole
+       stack grows upward as the inference panel opens -- no fixed offset
+       to keep in sync between the two blocks. */
+    #bl {
+      position: fixed; left: 12px; bottom: 12px; width: 250px;
+      display: flex; flex-direction: column; gap: 10px;
+      font: 12px system-ui, sans-serif; color: #ccc;
+    }
+    #brand { display: flex; align-items: center; gap: 10px; opacity: 0.85; }
+    #brand img { height: 30px; width: auto; filter: invert(1); flex: none; }
+    #brand .text { font-size: 10px; line-height: 1.35; color: #999; }
+    /* Explore button, at the top of the right-hand panel (buildExploreControl). */
+    #explore-box { margin-bottom: 16px; }
+    #explore-btn {
+      width: 100%; padding: 12px 10px; border: none; border-radius: 6px; cursor: pointer;
+      background: #2a78d6; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
+      box-shadow: 0 0 0 0 rgba(42,120,214,0.6); animation: explore-pulse 2.2s infinite;
+    }
+    #explore-btn:hover { background: #3987e5; }
+    #explore-btn.on { background: #1baf7a; animation: none; box-shadow: 0 0 0 2px rgba(27,175,122,0.35); }
+    #explore-btn.on:hover { background: #22c48b; }
+    @keyframes explore-pulse {
+      0% { box-shadow: 0 0 0 0 rgba(42,120,214,0.55); }
+      70% { box-shadow: 0 0 0 10px rgba(42,120,214,0); }
+      100% { box-shadow: 0 0 0 0 rgba(42,120,214,0); }
+    }
+    #infer button {
+      padding: 7px 10px; background: #2a78d6; color: #fff; border: none;
+      border-radius: 4px; font-size: 12px; cursor: pointer;
+    }
+    #infer button:hover { background: #3987e5; }
+    #infer button.secondary { background: #3a3a3a; }
+    #infer button.secondary:hover { background: #4a4a4a; }
+    #infer-panel { margin-top: 6px; padding: 10px; background: rgba(22,22,22,0.85); border-radius: 4px; }
+    #bl .slider { display: flex; justify-content: space-between; margin: 8px 0 2px; }
+    #bl input[type="range"] { width: 100%; margin: 0; }
+    #infer-panel .check { display: block; margin: 10px 0; cursor: pointer; }
+    #infer-panel .buttons { display: flex; gap: 6px; }
+    #infer-status { margin-top: 8px; color: #9fd; min-height: 1em; }
+
+    /* Recap card of the clicked point (see "Sub-network of a clicked point"). */
+    #recap {
+      position: fixed; z-index: 10; width: 290px; max-height: 72vh; overflow-y: auto; box-sizing: border-box;
+      padding: 12px; background: rgba(22,22,22,0.95); border: 1px solid #333; border-radius: 6px;
+      font: 12px system-ui, sans-serif; color: #ccc;
+    }
+    #recap .head { display: flex; align-items: center; gap: 8px; }
+    #recap .id { font-size: 15px; font-weight: 600; color: #fff; }
+    #recap .badge { padding: 1px 7px; border-radius: 9px; background: #2a78d6; color: #fff; font-size: 11px; }
+    #recap .close { margin-left: auto; background: none; border: none; color: #aaa; font-size: 16px; line-height: 1; cursor: pointer; }
+    #recap .close:hover { color: #fff; }
+    #recap .loc { margin: 6px 0 2px; color: #fff; }
+    #recap .muted { color: #888; }
+    #recap h4 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #9fd; }
+    #recap .bd { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+    #recap .list { max-height: 190px; overflow-y: auto; margin-top: 4px; border-top: 1px solid #2a2a2a; padding-top: 4px; }
+    #recap .li { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; white-space: nowrap; }
+    #recap .li span:last-child { overflow: hidden; text-overflow: ellipsis; color: #999; }
   </style>
 </head>
 <body>
   <div id="graph"></div>
   <div id="status">Loading data...</div>
   <div id="legend"></div>
-  <div id="panel"></div>
+  <div id="panel" class="collapsed"></div>
+  <button id="panel-toggle" class="collapsed" type="button" aria-label="Show filters panel">&lsaquo;</button>
+
+  <div id="bl">
+  <!-- City inference: hidden until the layout has settled AND the view shows
+       profiles whose city is missing. See the "City inference" block below. -->
+  <div id="infer" hidden>
+    <button id="infer-open">Infer missing cities</button>
+    <div id="infer-panel" hidden>
+      <div class="slider"><span>Min. located followings per seed (X)</span><b id="infer-x-val"></b></div>
+      <input type="range" id="infer-x" min="2" max="50" step="1" value="10">
+      <div class="slider"><span>Min. share of the top city (Y)</span><b id="infer-y-val"></b></div>
+      <input type="range" id="infer-y" min="50" max="95" step="1" value="70">
+      <div class="slider"><span>City-size correction (&alpha;, 0 = none)</span><b id="infer-alpha-val"></b></div>
+      <input type="range" id="infer-alpha" min="0" max="1" step="0.05" value="0">
+      <label class="check"><input type="checkbox" id="infer-nocountry"> Include profiles with no country</label>
+      <div class="buttons">
+        <button id="infer-run">Run</button>
+        <button id="infer-reset" class="secondary">Reset</button>
+      </div>
+      <div id="infer-status"></div>
+    </div>
+  </div>
+
+  <div id="brand">
+    <img src="assets/noritual-lab-logo.webp" alt="Noritual Lab">
+    <div class="text">Ancora Pacific GmbH<br>Belziger Str. 69-71, 10823 Berlin, Germany</div>
+  </div>
+  </div>
+
+  <div id="recap" hidden></div>
 
   <!-- cosmos.gl: GPU-accelerated force layout + rendering (see la_graph.html
        history / conversation for why -- 3d-force-graph didn't scale past a
@@ -61,16 +179,46 @@
   <script src="https://cdn.jsdelivr.net/npm/@cosmograph/cosmos@2.5.1/dist/index.min.js"></script>
   <script>
     const DATA_DIR = 'data';
-    // Must match the `spaceSize` passed to Cosmos.Graph below. cosmos.gl's
-    // own doc examples only ever show non-negative point coordinates
-    // (e.g. (0,0), (1,0), (0.5,1)) -- it expects points inside [0, SPACE_SIZE],
-    // not an arbitrary centered-at-zero range. Feeding it a centered range
-    // (e.g. [-1000,1000]) gets silently clipped/distorted instead of erroring,
-    // which is what produced the camera "drift" bugs.
-    const SPACE_SIZE = 8192;
+
+    // cosmos.gl stores point positions in a WebGL texture sized off
+    // `spaceSize`, so spaceSize is hard-capped by the GPU's max texture
+    // dimension (gl.MAX_TEXTURE_SIZE -- commonly 16384, but as low as 8192 on
+    // older or mobile GPUs). Ask for more than that and cosmos silently
+    // *halves the limit* instead of using our value (only a console warning
+    // says so) -- e.g. requesting 20000 on a 16384-limit device actually
+    // gives you 8192, HALF of what asking for nothing extra would have given.
+    // Point positions were then still being generated around our imagined
+    // SPACE_SIZE/2 (10000), which sits outside the real (8192) box: every
+    // coordinate got clamped to that wall, collapsing the whole graph onto a
+    // single point (confirmed live: bounding radius 0, camera distance
+    // 0.001). Probing the real limit here avoids ever hitting that silent
+    // fallback -- important since this page's visitors' GPUs aren't known
+    // ahead of time. DESIRED_SPACE_SIZE is what we'd like; SPACE_SIZE is
+    // that, clamped to what this device can actually provide margin below
+    // its limit, in case cosmos' own device probe reads slightly differently
+    // from ours).
+    const DESIRED_SPACE_SIZE = 16000;
+    function detectMaxSpaceSize() {
+      try {
+        const gl = document.createElement('canvas').getContext('webgl2');
+        const max = gl && gl.getParameter(gl.MAX_TEXTURE_SIZE);
+        return Number.isFinite(max) && max > 0 ? max : 8192;
+      } catch {
+        return 8192;
+      }
+    }
+    const SPACE_SIZE = Math.max(4096, Math.min(DESIRED_SPACE_SIZE, detectMaxSpaceSize() - 1024));
     let filtersData = null;
     let edges = null; // Int32Array, interleaved [source0, target0, source1, target1, ...]
     let graph = null; // current Cosmos.Graph instance, recreated on every filter change
+    let viewState = null; // what the current graph shows (see applyFilters), used by the city inference
+    let renderId = 0;     // bumped on every renderGraph, so callbacks of a replaced graph can tell they're stale
+    let simDone = false;  // true once the current graph's layout has settled
+
+    // Camera framing once the layout has settled (see recenterCamera).
+    const END_ZOOM_FACTOR = 0.8;  // 1 = keep the framing used while positions were computed; < 1 closer, > 1 farther
+    const END_CAMERA_MS = 400;  // length of the glide to that final framing
+    let recenteredFor = -1;     // renderId that recenterCamera has already handled
 
     const CATEGORICAL_PALETTE = [
       '#2a78d6', '#eb6834', '#1baf7a', '#eda100',
@@ -78,6 +226,8 @@
     ];
     const OTHER_COLOR = '#6b6b6b';
     const UNKNOWN_COLOR_RGBA = [0.55, 0.55, 0.55, 0.35];
+    // What a point looks like once its legend entry is dimmed with the eye button.
+    const DIM_COLOR_RGBA = [0.5, 0.5, 0.5, 0.08];
 
     function hexToRgba(hex, alpha) {
       return [
@@ -99,13 +249,16 @@
         `Loaded: ${filters.node_count.toLocaleString()} profiles, ${(edges.length/2).toLocaleString()} edges`;
       buildPanel(filters);
       applyDefaultFilters();
+      // Build the inference lookup tables right away (tens of ms, once) so
+      // the button never makes anyone wait when it shows up.
+      setTimeout(initInference, 0);
     });
 
     // Default view for anyone landing on the page: LA, San Diego, San
     // Francisco, Berlin, Hamburg, Munich, shell (unconnected nodes) hidden.
     function applyDefaultFilters() {
       const defaults = [
-        'f:city:US:los_angeles', 'f:city:US:san_diego', 'f:city:US:san_francisco',
+        'f:city:US:los_angeles', 'f:city:US:san_diego', 'f:city:US:san_francisco', 'f:city:US:new_york','f:city:US:seattle','f:city:US:chicago',
         'f:city:DE:berlin', 'f:city:DE:hamburg', 'f:city:DE:munich',
       ];
       for (const id of defaults) {
@@ -131,6 +284,8 @@
       const panel = document.getElementById('panel');
       panel.innerHTML = '';
 
+      panel.appendChild(buildExploreControl());
+
       const title = document.createElement('h2');
       title.textContent = 'Filters';
       panel.appendChild(title);
@@ -144,8 +299,12 @@
         others[code] = entry;
       }
 
-      // Highlighted countries (US, DE): expanded, cities always shown; US
-      // also gets a second column for states.
+      // Highlighted countries (US, DE): only the first city shows at first
+      // (44 US cities + 23 states otherwise dominate the page on load) --
+      // "Show more" reveals the rest of the cities and the states column,
+      // exactly as before. Whatever was checked among the hidden ones (e.g.
+      // the defaults in applyDefaultFilters) stays checked while collapsed:
+      // this only hides the row, selectedGroups() still reads it.
       for (const code of filters.highlighted) {
         const entry = filters.countries[code];
         const section = document.createElement('div');
@@ -154,14 +313,23 @@
         h3.appendChild(checkboxInline(`f:country:${code}`, entry.label, entry.indices.length));
         section.appendChild(h3);
 
+        const cityEntries = Object.entries(entry.cities);
+        const [firstSlug, firstCity] = cityEntries[0];
+        section.appendChild(checkbox(`f:city:${code}:${firstSlug}`, firstCity.label, firstCity.indices.length));
+
+        const moreToggle = document.createElement('span');
+        moreToggle.className = 'more-toggle';
+        moreToggle.textContent = '▸ Show more';
+        section.appendChild(moreToggle);
+
         const cols = document.createElement('div');
-        cols.className = 'columns';
+        cols.className = 'columns more-content';
 
         const cityCol = document.createElement('div');
         const cityH4 = document.createElement('h4');
         cityH4.textContent = 'Cities';
         cityCol.appendChild(cityH4);
-        for (const [slug, city] of Object.entries(entry.cities)) {
+        for (const [slug, city] of cityEntries.slice(1)) {
           cityCol.appendChild(checkbox(`f:city:${code}:${slug}`, city.label, city.indices.length));
         }
         cols.appendChild(cityCol);
@@ -178,6 +346,10 @@
         }
 
         section.appendChild(cols);
+        moreToggle.addEventListener('click', () => {
+          const open = cols.classList.toggle('open');
+          moreToggle.textContent = (open ? '▾ ' : '▸ ') + (open ? 'Show less' : 'Show more');
+        });
         panel.appendChild(section);
       }
 
@@ -234,31 +406,63 @@
 
     // --- Resolve every checked checkbox back to its {label, indices} entry ---
     function selectedGroups() {
+      // `level` = colour priority when a node is in several checked groups:
+      // the lower level wins (city, then state, then country).
       const groups = [];
       if (document.getElementById('f:unknown').checked) {
-        groups.push({ key: 'unknown', label: filtersData.unknown.label, indices: filtersData.unknown.indices, isUnknown: true });
+        groups.push({ key: 'unknown', label: filtersData.unknown.label, indices: filtersData.unknown.indices, isUnknown: true, level: 3 });
       }
       for (const [code, entry] of Object.entries(filtersData.countries)) {
         const countryBox = document.getElementById(`f:country:${code}`);
         if (countryBox && countryBox.checked) {
-          groups.push({ key: `country:${code}`, label: entry.label, indices: entry.indices });
+          groups.push({ key: `country:${code}`, label: entry.label, indices: entry.indices, level: 2 });
         }
         for (const [slug, city] of Object.entries(entry.cities)) {
           const box = document.getElementById(`f:city:${code}:${slug}`);
           if (box && box.checked) {
-            groups.push({ key: `city:${code}:${slug}`, label: city.label, indices: city.indices });
+            groups.push({ key: `city:${code}:${slug}`, label: city.label, indices: city.indices, level: 0 });
           }
         }
         if (entry.states) {
           for (const [slug, state] of Object.entries(entry.states)) {
             const box = document.getElementById(`f:state:${slug}`);
             if (box && box.checked) {
-              groups.push({ key: `state:${slug}`, label: state.label, indices: state.indices });
+              groups.push({ key: `state:${slug}`, label: state.label, indices: state.indices, level: 1 });
             }
           }
         }
       }
       return groups;
+    }
+
+    // --- "Unknown Location" restricted to what the selection actually follows ---
+    let unknownMask = null; // Uint8Array(node_count), 1 where the profile is "Unknown Location"
+
+    function getUnknownMask() {
+      if (!unknownMask) {
+        unknownMask = new Uint8Array(filtersData.node_count);
+        for (const idx of filtersData.unknown.indices) unknownMask[idx] = 1;
+      }
+      return unknownMask;
+    }
+
+    // Edge convention (graph_edges.bin): source = follower, target = following.
+    // Only ~4k nodes ever appear as a source (the scraped seeds), everything
+    // else is only ever a target -- so "seeds" here is just every node of the
+    // checked groups, the ones without out-edges contribute nothing.
+    function unknownFollowedBy(seedGroups) {
+      const n = filtersData.node_count;
+      const unknownMask = getUnknownMask();
+      const isSeed = new Uint8Array(n);
+      for (const g of seedGroups) for (const idx of g.indices) isSeed[idx] = 1;
+
+      const seen = new Uint8Array(n);
+      const followed = [];
+      for (let e = 0; e < edges.length; e += 2) {
+        const t = edges[e + 1];
+        if (isSeed[edges[e]] && unknownMask[t] && !seen[t]) { seen[t] = 1; followed.push(t); }
+      }
+      return followed;
     }
 
     // --- Build the induced subgraph from the checked groups and (re)render ---
@@ -267,6 +471,21 @@
       if (groups.length === 0) {
         document.getElementById('status').textContent = 'Pick at least one filter, then hit "Update graph".';
         return;
+      }
+
+      // "Unknown Location" is 580k of the 746k profiles, most of them
+      // unrelated to the cities picked. Keep only the unknowns followed by
+      // the other checked groups; with none checked there's no seed to
+      // follow from, so nothing meaningful to show.
+      const unknownGroup = groups.find(g => g.isUnknown);
+      if (unknownGroup) {
+        const seedGroups = groups.filter(g => !g.isUnknown);
+        if (seedGroups.length === 0) {
+          document.getElementById('status').textContent =
+            'Unknown Location shows the profiles followed by the selection: also pick a city, state or country.';
+          return;
+        }
+        unknownGroup.indices = unknownFollowedBy(seedGroups);
       }
 
       // Rank groups by size (excluding "unknown", which always stays a
@@ -281,14 +500,14 @@
         groupColor[g.key] = hexToRgba(hex, 1);
         groupHex[g.key] = hex;
       });
-      buildLegend(known, groupHex, groups.some(g => g.isUnknown));
+      const hasUnknown = groups.some(g => g.isUnknown);
 
-      // node -> owning group (first match wins; groups are pushed in
-      // city -> state -> country -> unknown order per country block above,
-      // so a node in both a checked city and its checked country reads as
-      // the city -- the finer-grained label).
+      // node -> owning group (first match wins, so walk the groups from the
+      // finest level to the coarsest: a node in both a checked city and its
+      // checked country reads as the city, and a node with a country but no
+      // city (or state) falls through to the country colour).
       const nodeGroup = new Map();
-      for (const g of groups) {
+      for (const g of [...groups].sort((a, b) => a.level - b.level)) {
         for (const idx of g.indices) {
           if (!nodeGroup.has(idx)) nodeGroup.set(idx, g);
         }
@@ -322,6 +541,7 @@
       }
       let links = new Int32Array(linkPairs);
       let finalPositions = positions, finalColors = colors, finalSizes = sizes;
+      let finalIds = Int32Array.from(selectedIndices); // global profile id of each final point
       let nodeCount = selectedIndices.length;
 
       if (document.getElementById('hide-isolated').checked) {
@@ -333,13 +553,14 @@
 
         const remap = new Int32Array(nodeCount).fill(-1);
         let kept = 0;
-        const keptPositions = [], keptColors = [], keptSizes = [];
+        const keptPositions = [], keptColors = [], keptSizes = [], keptIds = [];
         for (let i = 0; i < nodeCount; i++) {
           if (degree[i] === 0) continue;
           remap[i] = kept;
           keptPositions.push(positions[i*3], positions[i*3+1], positions[i*3+2]);
           keptColors.push(colors[i*4], colors[i*4+1], colors[i*4+2], colors[i*4+3]);
           keptSizes.push(sizes[i]);
+          keptIds.push(selectedIndices[i]);
           kept++;
         }
 
@@ -349,6 +570,7 @@
         finalPositions = new Float32Array(keptPositions);
         finalColors = new Float32Array(keptColors);
         finalSizes = new Float32Array(keptSizes);
+        finalIds = new Int32Array(keptIds);
         links = remappedLinks;
         nodeCount = kept;
       }
@@ -356,40 +578,132 @@
       document.getElementById('status').textContent =
         `${nodeCount.toLocaleString()} nodes, ${(links.length/2).toLocaleString()} edges`;
 
+      // Every point shows one legend entry, identified by its group key
+      // (city / state / country / unknown; inference can move a point to
+      // another city's entry). `nodeKey` holds, per point, an index into
+      // `keys`; the eye buttons in the legend work per key.
+      const keys = groups.map(g => g.key);
+      const keyIndex = new Map(keys.map((k, i) => [k, i]));
+      const nodeKey = new Uint16Array(finalIds.length);
+      for (let i = 0; i < finalIds.length; i++) nodeKey[i] = keyIndex.get(nodeGroup.get(finalIds[i]).key);
+
+      // What's on screen, kept for the legend buttons and the city-inference
+      // step, which both recolour points in place. Colours come in layers:
+      //   baseColors = the colours as first drawn,
+      //   raw        = baseColors + inferred cities (what a point looks like undimmed),
+      //   colors     = raw, except grey/faint where the point's entry is dimmed --
+      //                the very array cosmos holds (`finalColors`).
+      viewState = {
+        ids: finalIds,
+        colors: finalColors,
+        raw: finalColors.slice(),
+        baseColors: finalColors.slice(),
+        sizes: finalSizes,
+        baseSizes: finalSizes.slice(),
+        groupColor,
+        groupHex,
+        legendGroups: known,
+        hasUnknown,
+        knownCount: known.length,
+        keys, keyIndex, nodeKey, baseNodeKey: nodeKey.slice(),
+        dimFlag: [],                                  // by key index: is that legend entry dimmed
+        extras: [],                                   // legend rows added by inference: {key, css, text}
+        inferredCity: new Int16Array(finalIds.length).fill(-1), // per point: city index it was inferred to, or -1
+        revealing: false,                             // the inference reveal is running
+        links: links, showLinks: !hasUnknown,         // final links (local point indices) and whether they're drawn
+        // Exploring sub-networks (see "Exploring sub-networks"):
+        explore: false,                               // Explore is on: dark by default, lit on hover
+        dimOthers: false,                             // points outside the lit sub-network are dimmed (explore, or a pinned network)
+        selected: -1,                                 // the point whose sub-network is lit, -1 = none
+        pinned: -1,                                   // the clicked point (its network stays lit); -1 = none
+        focus: new Uint8Array(finalIds.length),       // 1 for the points of the lit sub-network
+        litPoints: [], litSizes: [], seedPoints: [],  // those points, their sizes before the bump, and the lit seeds among them
+        linkPtr: null, linkOrder: null, linkColors: null, // links by source point, and the per-link colours (built on first use)
+        linksLit: false,                              // the link colours currently show the lit sub-network's links
+        kind: null, pointOf: null, nCountryOnly: 0, nNoCountry: 0, // filled by prepareView()
+        inferredColors: new Map(), extraSlots: 0, otherRow: false,
+      };
+      renderLegend(viewState);
+
       // "Unknown Location" alone is 580k of the 746k total profiles -- by
       // far the single biggest lever for landing in the slow regime.
       // Link rendering (not point count or collision) is what actually
       // lags at that scale, so use it as the switch: keep edges visible
       // for any other selection, drop them the moment Unknown is checked.
-      const hasUnknown = groups.some(g => g.isUnknown);
-      renderGraph(finalPositions, finalColors, finalSizes, links, !hasUnknown);
+      renderGraph(finalPositions, finalColors, finalSizes, links, !hasUnknown); //!hasUnknown
+      if (exploreOn) setExplore(true); // Explore stays on across filter changes: the new graph starts dark too
     }
 
-    // --- Legend: one swatch per currently-selected group, same color
-    // assignment as the render (one color = one city/state/country). ---
-    function buildLegend(known, groupHex, hasUnknown) {
-      const legend = document.getElementById('legend');
-      legend.innerHTML = '';
-      for (const g of known) {
-        const row = document.createElement('div');
-        row.className = 'row';
-        const sw = document.createElement('span');
-        sw.className = 'swatch';
-        sw.style.background = groupHex[g.key];
-        row.appendChild(sw);
-        row.append(g.label);
-        legend.appendChild(row);
+    // --- Legend: one row per colour on screen, same color assignment as the
+    // render (one color = one city/state/country), plus "Unknown Location"
+    // and any city added by inference. Each row has an eye button that dims
+    // that entry's points (grey, low opacity). Dimming only recolours: no
+    // re-layout, positions don't move. ---
+    const ICON_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const ICON_EYE_OFF = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+    function registerKey(vs, key) {
+      let i = vs.keyIndex.get(key);
+      if (i === undefined) { i = vs.keys.length; vs.keys.push(key); vs.keyIndex.set(key, i); }
+      return i;
+    }
+
+    function addLegendRow(vs, key, css, text) {
+      const ki = registerKey(vs, key);
+      const row = document.createElement('div');
+      const sw = document.createElement('span');
+      sw.className = 'swatch';
+      sw.style.background = css;
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = text;
+      const btn = document.createElement('button');
+      btn.className = 'eye';
+      btn.type = 'button';
+      const sync = () => {
+        const off = !!vs.dimFlag[ki];
+        row.className = off ? 'row off' : 'row';
+        btn.innerHTML = off ? ICON_EYE_OFF : ICON_EYE;
+        btn.title = off ? 'Show these points again' : 'Dim these points';
+      };
+      btn.addEventListener('click', () => {
+        if (vs !== viewState || !graph) return; // legend of a replaced graph
+        vs.dimFlag[ki] = !vs.dimFlag[ki];
+        sync();
+        for (let p = 0; p < vs.nodeKey.length; p++) if (vs.nodeKey[p] === ki) paintPoint(vs, p);
+        refreshGraph(vs, false);
+      });
+      sync();
+      row.append(sw, label, btn);
+      document.getElementById('legend').appendChild(row);
+    }
+
+    function renderLegend(vs) {
+      document.getElementById('legend').innerHTML = '';
+      for (const g of vs.legendGroups) addLegendRow(vs, g.key, vs.groupHex[g.key], g.label);
+      if (vs.hasUnknown) addLegendRow(vs, 'unknown', 'rgba(140,140,140,0.5)', 'Unknown Location');
+      for (const e of vs.extras) addLegendRow(vs, e.key, e.css, e.text);
+    }
+
+    // Displayed colour of one point, in order of precedence:
+    //   the selected point            -> white (always visible),
+    //   dimmed legend entry, or a selection is active and the point is
+    //   outside its sub-network       -> the dim colour,
+    //   inside the sub-network        -> its raw colour, fully opaque,
+    //   otherwise                     -> its raw colour.
+    function paintPoint(vs, p) {
+      const i = p * 4, c = vs.colors, r = vs.raw;
+      if (p === vs.selected) {
+        c[i] = 1; c[i + 1] = 1; c[i + 2] = 1; c[i + 3] = 1;
+      } else if (vs.dimFlag[vs.nodeKey[p]] || (vs.dimOthers && !vs.focus[p])) {
+        c[i] = DIM_COLOR_RGBA[0]; c[i + 1] = DIM_COLOR_RGBA[1]; c[i + 2] = DIM_COLOR_RGBA[2]; c[i + 3] = DIM_COLOR_RGBA[3];
+      } else {
+        c[i] = r[i]; c[i + 1] = r[i + 1]; c[i + 2] = r[i + 2]; c[i + 3] = vs.dimOthers ? 1 : r[i + 3];
       }
-      if (hasUnknown) {
-        const row = document.createElement('div');
-        row.className = 'row';
-        const sw = document.createElement('span');
-        sw.className = 'swatch';
-        sw.style.background = 'rgba(140,140,140,0.5)';
-        row.appendChild(sw);
-        row.append('Unknown Location');
-        legend.appendChild(row);
-      }
+    }
+
+    function repaintAll(vs) {
+      for (let p = 0; p < vs.nodeKey.length; p++) paintPoint(vs, p);
     }
 
     // --- (Re)create the Cosmos.Graph instance for a fresh selection ---
@@ -401,6 +715,15 @@
       }
 
       const ALPHA_STOP_THRESHOLD = 0.1;
+      const myRenderId = ++renderId;
+      simDone = false;
+      updateInferUi(); // hides the inference controls until this layout has settled
+      rot.userPaused = false; // a new graph always starts rotating
+      rot.glide = null;
+      rotationHint();
+      dof.ref = null;             // no default framing yet: no depth focus until the layout settles
+      dof.applied = DOF_BASE;     // a new graph starts with cosmos's default depth fade
+      document.getElementById('recap').hidden = true; // a new graph starts with no selection
 
       graph = new Cosmos.Graph(document.getElementById('graph'), {
         spaceDimensions: 3,
@@ -412,12 +735,12 @@
         linkDefaultColor: '#8899aa',
         linkOpacity: 0.3,
         linkDefaultWidth: 0.5,
-        simulationRepulsion: 10,
+        simulationRepulsion: 20,
         simulationLinkSpring: 1,
-        simulationLinkDistance: 40,
+        simulationLinkDistance: 100,
         simulationGravity: 0.25,
         simulationCollision: 0,
-        simulationDecay: 5000,
+        simulationDecay: 1000000,
         // Root cause of "graph drifts right then snaps to center at the
         // 5s timeout": initial positions used to be generated centered on
         // (0,0,0) (e.g. (Math.random()-0.5)*2000), but cosmos.gl expects
@@ -438,10 +761,20 @@
           return (alpha) => {
             tickCount++;
             if (tickCount === 1) graph.fitView(0);
-            if (alpha < ALPHA_STOP_THRESHOLD) graph.pause();
+            if (alpha < ALPHA_STOP_THRESHOLD) { graph.pause(); markSimDone(myRenderId); }
           };
         })(),
-        onSimulationEnd: () => recenterCamera(),
+        onSimulationEnd: () => { recenterCamera(); markSimDone(myRenderId); },
+        // A ring around the point under the mouse, and a hand cursor, so it's
+        // clear what a click will select (points are small).
+        renderHoveredPointRing: true,
+        hoveredPointRingColor: '#ffffff',
+        hoveredPointCursor: 'pointer',
+        // index = the clicked point, undefined when the click lands on empty space.
+        onClick: index => onPointClick(myRenderId, index),
+        // Hover preview of the sub-network (see onPointHover).
+        onPointMouseOver: index => onPointHover(myRenderId, index),
+        onPointMouseOut: () => onPointHover(myRenderId, undefined),
       });
 
       graph.setPointPositions(positions, { dimensions: 3 });
@@ -452,26 +785,53 @@
       graph.start();
 
       setTimeout(() => {
-        if (graph) { graph.pause(); recenterCamera(); }
+        // Stale timer of a graph that has since been replaced: leave the
+        // new graph alone (it used to get paused early by this).
+        if (myRenderId !== renderId) return;
+        if (graph) { graph.pause(); recenterCamera(); markSimDone(myRenderId); }
       }, 5000);
     }
 
     function recenterCamera() {
       if (!graph) return;
-      // fitView() (not setCameraState) on purpose: its own docs flag that
-      // setCameraState can leave the near/far clipping planes sized for a
-      // stale scene radius when the actual point cloud's extent changes a
-      // lot between renders (e.g. hiding the isolated-node shell shrinks
-      // it sharply) -- points then clip in/out of view while rotating.
-      // fitView() recomputes the camera framing AND those clipping limits
-      // together. Calling it here (after the simulation has settled, not
-      // at graph-init time) avoids the earlier bug where the library's own
-      // automatic on-init fitView ran before positions were rescaled into
-      // their final coordinate space. A short animated duration (instead
-      // of the instant 0ms used for the tick-1 init correction) makes this
-      // final zoom-to-fit read as an intentional camera move rather than a
-      // jarring snap.
-      graph.fitView(300);
+      // fitView() is still what recomputes the scene radius that sizes the
+      // near/far clipping planes and the depth fade (its own docs flag that
+      // setCameraState alone can leave them stale when the point cloud's
+      // extent changes a lot between renders, e.g. hiding the isolated-node
+      // shell shrinks it sharply -- points then clip in/out of view while
+      // rotating). Calling it here, once the simulation has settled, avoids
+      // the earlier bug where the library's own automatic on-init fitView
+      // ran before positions were rescaled into their final coordinate
+      // space.
+      //
+      // But fitView also frames the bounding sphere of *every* point, so a
+      // few far-flung outliers zoom the whole view out. The framing used
+      // while the positions were being computed (fitted on the first tick)
+      // reads better, so keep that camera: run fitView(0) only for its
+      // scene-radius side effect, put the camera back, and glide to the
+      // fitted distance only when the settled cloud would fit *closer* than
+      // that. END_ZOOM_FACTOR then scales the result (< 1 closer, > 1
+      // farther); it's applied once per graph, this function can run twice.
+      // The glide is not a library transition: rotationTick plays it, in
+      // the same per-frame camera update as the rotation, because a library
+      // transition and a per-frame setCameraState cancel each other (the
+      // rotation used to have to stop for it).
+      const first = recenteredFor !== renderId;
+      recenteredFor = renderId;
+      const before = graph.getCameraState();
+      graph.fitView(0);
+      const fit = graph.getCameraState();
+      graph.setCameraState(before, 0);
+      const closer = fit.distance < before.distance;
+      rot.glide = {
+        start: performance.now(),
+        from: { target: before.target, distance: before.distance },
+        to: {
+          target: closer ? fit.target : before.target,
+          distance: Math.min(before.distance, fit.distance) * (first ? END_ZOOM_FACTOR : 1),
+        },
+      };
+      if (first) dof.ref = rot.glide.to.distance; // the depth focus measures zoom against this framing
 
       // Diagnostics: log the actual data extent vs. what the camera ended
       // up with, and vs. spaceSize -- to see numerically whether there's a
@@ -489,6 +849,900 @@
       console.log('[diag] data centroid:', [cx, cy, cz], 'bounding radius:', maxDist);
       console.log('[diag] camera state after fitView():', graph.getCameraState());
     }
+
+    // =====================================================================
+    // Auto-rotation
+    //
+    // The camera orbits the cloud slowly from the moment a graph is created
+    // (layout still being computed included), with no gap when the layout
+    // settles. A mouse press or drag on the graph stops it, and it starts
+    // again after ROTATE_RESUME_MS without a press, drag or zoom. Zooming
+    // alone never stops it. Speed is in degrees per second, 0 = off, set
+    // from the slider in the right-hand panel.
+    //
+    // One requestAnimationFrame loop owns every per-frame camera change
+    // (azimuth, plus the end-of-layout glide of recenterCamera), so they
+    // never cancel each other.
+    // =====================================================================
+    const ROTATE_RESUME_MS = 30000;
+    const ROTATE_MAX_DT = 0.25; // seconds; caps the step after a stall (hidden tab...) so the camera doesn't jump
+    const rot = {
+      speed: 5,          // degrees/second, mirrors the slider
+      userPaused: false, // a press/drag stopped the rotation...
+      resumeAt: 0,       // ...until this time (performance.now() scale)
+      glide: null,       // {start, from, to}: recenterCamera's move to the final framing, played by rotationTick
+      last: 0,           // timestamp of the previous frame
+    };
+
+    // Depth focus. Once you zoom in far enough, points behind the one you are
+    // zooming on fade while the foreground stays sharp. It drives cosmos's own
+    // `pointDepthFade` (done on the GPU, so it costs nothing per point): 0.1
+    // is cosmos's default, i.e. "no focus"; towards 1 the far side fades out.
+    // The strength ramps in smoothly between two zoom ratios, where the ratio
+    // is (camera distance of the default framing) / (current distance).
+    // It must be set by writing graph.config directly: setConfig() resets
+    // every option that isn't passed and would wipe the rest of the config.
+    // Points very close to the camera vanish anyway in deep zooms (a cosmos
+    // near-clip of roughly half the scene radius, unrelated to this fade).
+    const DOF_BASE = 0.1;   // cosmos's default pointDepthFade
+    const DOF_START = 1.8;  // zoom ratio where the focus starts to fade in
+    const DOF_FULL = 4;     // zoom ratio where it reaches full strength
+    const dof = {
+      max: 0.6,           // full-strength pointDepthFade, mirrors the slider (0 = off)
+      ref: null,          // camera distance of the default framing (set by recenterCamera)
+      applied: DOF_BASE,  // value currently written to the graph
+      hint: '',           // text currently shown under the slider
+    };
+
+    function depthFadeFor(distance) {
+      if (!dof.ref) return DOF_BASE;
+      const u = Math.min(1, Math.max(0, (dof.ref / distance - DOF_START) / (DOF_FULL - DOF_START)));
+      return DOF_BASE + Math.max(0, dof.max - DOF_BASE) * u * u * (3 - 2 * u);
+    }
+
+    // No UI for these any more (kept deliberately minimal): edit rot.speed
+    // and dof.max above directly to change the auto-rotation speed and the
+    // depth-focus strength.
+    function rotationHint() {
+      const el = document.getElementById('rot-hint'); // no longer in the page; kept a no-op so nothing else has to change
+      if (el) el.textContent = rot.speed === 0 ? '' : rot.userPaused ? 'Paused, resumes after 30 s without interaction' : 'Rotating';
+    }
+
+    function depthFocusHint(distance) {
+      const el = document.getElementById('dof-hint'); // no longer in the page; see rotationHint
+      if (!el) return;
+      const text = dof.max <= DOF_BASE ? '' : !dof.ref ? '' : dof.ref / distance < DOF_START
+        ? `Zoom in past x${DOF_START} to activate` : 'Active';
+      if (text !== dof.hint) { dof.hint = text; el.textContent = text; }
+    }
+
+    // An interaction on the graph. `stop` (press) halts the rotation; a
+    // drag or a zoom only pushes the resume time back. Any of them cancels
+    // a pending glide so it doesn't fight the user's own camera move.
+    function rotationTouched(stop) {
+      const wasPaused = rot.userPaused;
+      rot.glide = null;
+      if (stop) rot.userPaused = true;
+      if (rot.userPaused) rot.resumeAt = performance.now() + ROTATE_RESUME_MS;
+      if (rot.userPaused !== wasPaused) rotationHint();
+    }
+
+    function rotationTick(now) {
+      requestAnimationFrame(rotationTick);
+      const dt = Math.min(ROTATE_MAX_DT, (now - rot.last) / 1000);
+      rot.last = now;
+      if (!graph) return;
+
+      const cam = graph.getCameraState();
+      if (!cam) return;
+      const patch = {};
+      if (rot.glide) {
+        const g = rot.glide;
+        const u = Math.min(1, Math.max(0, (now - g.start) / END_CAMERA_MS));
+        const e = u * u * (3 - 2 * u); // smoothstep
+        patch.distance = g.from.distance + (g.to.distance - g.from.distance) * e;
+        patch.target = g.from.target.map((v, i) => v + (g.to.target[i] - v) * e);
+        if (u >= 1) rot.glide = null;
+      }
+      if (rot.speed > 0) {
+        if (rot.userPaused && now >= rot.resumeAt) { rot.userPaused = false; rotationHint(); }
+        if (!rot.userPaused) patch.azimuth = cam.azimuth + rot.speed * Math.PI / 180 * dt;
+      }
+
+      // Depth focus follows the zoom. Writing the option doesn't by itself
+      // ask cosmos for a new frame, so make sure the camera update below
+      // happens (a no-op azimuth is enough).
+      const distance = patch.distance !== undefined ? patch.distance : cam.distance;
+      const fade = depthFadeFor(distance);
+      if (Math.abs(fade - dof.applied) > 0.01) {
+        graph.config.pointDepthFade = fade;
+        dof.applied = fade;
+        if (patch.azimuth === undefined && patch.distance === undefined) patch.azimuth = cam.azimuth;
+      }
+      depthFocusHint(distance);
+
+      if (patch.azimuth !== undefined || patch.distance !== undefined) graph.setCameraState(patch);
+    }
+
+    (() => {
+      // Capture phase, on the container: cosmos handles its own pointer
+      // events on the canvas and we must see them regardless.
+      const el = document.getElementById('graph');
+      el.addEventListener('pointerdown', () => rotationTouched(true), true);
+      el.addEventListener('pointermove', e => { if (e.buttons) rotationTouched(false); }, true);
+      el.addEventListener('pointerup', () => rotationTouched(false), true);
+      el.addEventListener('wheel', () => rotationTouched(false), { capture: true, passive: true });
+      requestAnimationFrame(rotationTick);
+    })();
+
+    // --- Filters panel collapse (the tab on its left edge) ---
+    (() => {
+      const panel = document.getElementById('panel'), btn = document.getElementById('panel-toggle');
+      btn.addEventListener('click', () => {
+        const collapsed = panel.classList.toggle('collapsed');
+        btn.classList.toggle('collapsed', collapsed);
+        btn.innerHTML = collapsed ? '&lsaquo;' : '&rsaquo;';
+        btn.setAttribute('aria-label', collapsed ? 'Show filters panel' : 'Hide filters panel');
+      });
+    })();
+
+    // =====================================================================
+    // Exploring sub-networks
+    //
+    // The "Explore" button (top of the right-hand panel) turns the graph dark
+    // and lights up, as the mouse passes over a point, the first sub-network
+    // around it:
+    //   * a seed (a profile with followings): itself and its direct followings;
+    //   * a following: the seeds that follow it, and all of their followings.
+    // A profile that is both counts as a seed. 87% of the seeds are also
+    // followed by another seed, so treating them as followings too would drag
+    // in whole other networks. Only the links that leave a lit seed stay
+    // visible. Only colours and sizes change: no second simulation, nothing
+    // moves.
+    //
+    // A recap card, in a fixed place on the left, follows the hover: the
+    // profile's id -- the index used in the data files, NOT the real account
+    // id, which isn't in the data --, its location, and its network.
+    //
+    // A click pins the sub-network: it stays as it is (hovering other points
+    // changes nothing) and the card gets the list of profiles, until the next
+    // click, which releases it and lets the hover take over again. A click
+    // also pins without Explore (the rest is then dimmed only while the
+    // network is pinned). Unticking Explore or pressing Escape clears it all.
+    // Only points currently on screen can be lit; the recap covers the whole
+    // network and says how many are shown.
+    //
+    // Speed: a hover must not cost a frame. Only the points of the previous
+    // and of the new sub-network are repainted, and the graph is refreshed by
+    // refreshGraph() instead of graph.render(), which reprocesses every array
+    // (~100 ms at 150k points) even for a recolour.
+    // =====================================================================
+    const SELECTED_SIZE = 10;                   // the point whose network is lit (drawn white)
+    const FOCUS_MIN_SIZE = 4;                   // lit points are at least this big (Unknown ones start at 2)
+    const LINK_LIT = [0.85, 0.92, 1, 1];        // links of the lit sub-network
+    const LINK_OUT = [0.53, 0.6, 0.667, 0.03];  // every other link, while the graph is dark
+    const LINK_BASE = [0.533, 0.6, 0.667, 1];   // back to normal: the same colour as linkDefaultColor '#8899aa'
+    const RECAP_LIST_MAX = 200;                 // rows in a pinned recap's list; the rest is only counted
+    // Recolouring links is by far the slowest part of a hover (~45 ms for
+    // 220k links, against ~11 ms for the points). Above this many links a
+    // hover preview lights the points only and pinning (a click) adds the links.
+    const HOVER_LINKS_MAX = 60000;
+
+    // Push changed point colours and sizes (and link colours) to the GPU.
+    // cosmos's graph.render() reprocesses every array of the graph; this does
+    // what render() does for just these, ~10x cheaper on big views. It relies
+    // on cosmos 2.5.1 internals and falls back to render() if they're absent.
+    // Two details matter: update() must be called with no argument (it would
+    // overwrite the simulation's alpha), and the transition duration must be
+    // 0, otherwise colours animate and quick successive changes get lost.
+    function refreshGraph(vs, links) {
+      const g = graph;
+      if (!g) return;
+      g.setPointColors(vs.colors);
+      g.setPointSizes(vs.sizes);
+      if (links) g.setLinkColors(vs.linkColors);
+      const D = g.graph;
+      if (!(D && D.updatePointColor && D.updatePointSize && D.updateLinkColor && g.transition && g.transition.setDurationOverride)) {
+        g.render();
+        return;
+      }
+      D.updatePointColor();
+      D.updatePointSize();
+      if (links) D.updateLinkColor();
+      g.transition.setDurationOverride(0);
+      g.update();
+      g.transition.start();
+      g.requestRender();
+    }
+
+    // Links grouped by their source point, plus the per-link colour array
+    // cosmos reads (built on first use).
+    function ensureLinkIndex(vs) {
+      if (!vs.showLinks || vs.linkPtr) return;
+      const L = vs.links, nL = L.length / 2, n = vs.ids.length;
+      const ptr = new Int32Array(n + 1);
+      for (let i = 0; i < L.length; i += 2) ptr[L[i] + 1]++;
+      for (let q = 0; q < n; q++) ptr[q + 1] += ptr[q];
+      const fill = ptr.slice(0, n), order = new Int32Array(nL);
+      for (let i = 0; i < nL; i++) order[fill[L[2 * i]]++] = i;
+      vs.linkPtr = ptr;
+      vs.linkOrder = order;
+      vs.linkColors = new Float32Array(nL * 4);
+      fillLinks(vs, LINK_BASE);
+    }
+
+    function fillLinks(vs, c) {
+      const a = vs.linkColors;
+      for (let i = 0; i < a.length; i += 4) { a[i] = c[0]; a[i + 1] = c[1]; a[i + 2] = c[2]; a[i + 3] = c[3]; }
+    }
+
+    function colourSeedLinks(vs, seedPoints, c) {
+      const a = vs.linkColors;
+      for (const s of seedPoints) {
+        for (let k = vs.linkPtr[s]; k < vs.linkPtr[s + 1]; k++) {
+          const o = vs.linkOrder[k] * 4;
+          a[o] = c[0]; a[o + 1] = c[1]; a[o + 2] = c[2]; a[o + 3] = c[3];
+        }
+      }
+    }
+
+    // Where a profile is, straight from the data, or the inferred city when
+    // inference has run and the point is on screen. Used for the recap's
+    // header and rows; `rank` sorts lists: located first, unknown last.
+    function locationOf(g) {
+      const T = initInference(), vs = viewState;
+      const countryLabel = ci => filtersData.countries[T.codes[ci]].label;
+      const p = vs.pointOf ? vs.pointOf[g] : -1;
+      const inferred = p >= 0 ? vs.inferredCity[p] : -1;
+      const city = T.cityId[g] >= 0 ? T.cityId[g] : inferred;
+      if (city >= 0) {
+        const c = T.cities[city], tag = T.cityId[g] >= 0 ? '' : ' (inferred)';
+        return { text: `${c.label}, ${countryLabel(c.country)}${tag}`, rank: tag ? 1 : 0 };
+      }
+      const ci = T.countryIdx[g];
+      if (T.stateId[g] >= 0) {
+        const s = T.stateLabels[T.stateId[g]];
+        return { text: ci >= 0 ? `${s}, ${countryLabel(ci)}` : s, rank: 2 };
+      }
+      if (ci >= 0) return { text: `${countryLabel(ci)} (city unknown)`, rank: 3 };
+      return { text: 'Unknown location', rank: 4 };
+    }
+
+    // The same information as one small integer (see catOf in initInference),
+    // so a 40,000-profile network can be counted without allocating anything.
+    function categoryOf(vs, g) {
+      const T = inf;
+      if (T.cityId[g] < 0) {
+        const p = vs.pointOf[g];
+        if (p >= 0 && vs.inferredCity[p] >= 0) return T.inferredCat0 + vs.inferredCity[p];
+      }
+      return T.catOf[g];
+    }
+
+    // Sub-network of a profile, by global id: `seeds` are the profiles whose
+    // links are lit, `net` everything lit besides the profile and those seeds.
+    function egoOf(g) {
+      const T = initInference();
+      const followings = [], seedsOf = [];
+      for (let k = T.outPtr[g]; k < T.outPtr[g + 1]; k++) if (T.outIdx[k] !== g) followings.push(T.outIdx[k]);
+      for (let k = T.inPtr[g]; k < T.inPtr[g + 1]; k++) if (T.inIdx[k] !== g) seedsOf.push(T.inIdx[k]);
+      if (followings.length > 0) return { isSeed: true, seeds: [g], seedsOf, net: followings };
+
+      const seen = new Set([g, ...seedsOf]), net = [];
+      for (const s of seedsOf) {
+        for (let k = T.outPtr[s]; k < T.outPtr[s + 1]; k++) {
+          const t = T.outIdx[k];
+          if (!seen.has(t)) { seen.add(t); net.push(t); }
+        }
+      }
+      return { isSeed: false, seeds: seedsOf, seedsOf, net };
+    }
+
+    function repaintPoints(vs, list) {
+      for (const q of list) paintPoint(vs, q);
+    }
+
+    // Light the sub-network of point p and dim the rest, touching only the
+    // points of the previous and of the new sub-network. `vs.selected` is the
+    // point whose network is lit (-1 = none). `withLinks` false skips the link
+    // colours (see HOVER_LINKS_MAX). Returns the network.
+    function applyFocus(vs, p, withLinks) {
+      prepareView();
+      ensureLinkIndex(vs);
+      const ego = egoOf(vs.ids[p]);
+
+      // undo the previous focus
+      const prev = vs.litPoints, prevSeeds = vs.seedPoints;
+      for (let i = 0; i < prev.length; i++) { vs.focus[prev[i]] = 0; vs.sizes[prev[i]] = vs.litSizes[i]; }
+
+      // light the new one
+      const lit = [], sizes0 = [], seeds = [];
+      const light = id => {
+        const q = vs.pointOf[id];
+        if (q >= 0 && !vs.focus[q]) { vs.focus[q] = 1; lit.push(q); }
+        return q;
+      };
+      light(vs.ids[p]);
+      for (const s of ego.seeds) { const q = light(s); if (q >= 0) seeds.push(q); }
+      for (const t of ego.net) light(t);
+      for (const q of lit) { sizes0.push(vs.sizes[q]); if (vs.sizes[q] < FOCUS_MIN_SIZE) vs.sizes[q] = FOCUS_MIN_SIZE; }
+      vs.sizes[p] = SELECTED_SIZE;
+
+      const wasDark = vs.dimOthers;
+      vs.selected = p;
+      vs.dimOthers = true;
+      vs.litPoints = lit; vs.litSizes = sizes0; vs.seedPoints = seeds;
+      if (wasDark) { repaintPoints(vs, prev); repaintPoints(vs, lit); }
+      else repaintAll(vs);
+
+      let linksChanged = false;
+      if (vs.showLinks) {
+        if (!wasDark) { fillLinks(vs, LINK_OUT); vs.linksLit = false; linksChanged = true; }        // going dark for the first time
+        else if (vs.linksLit) { colourSeedLinks(vs, prevSeeds, LINK_OUT); vs.linksLit = false; linksChanged = true; }
+        if (withLinks) { colourSeedLinks(vs, seeds, LINK_LIT); vs.linksLit = true; linksChanged = true; }
+      }
+      refreshGraph(vs, linksChanged);
+      return ego;
+    }
+
+    // Nothing lit any more: dark if Explore is on, plain otherwise.
+    function dropFocus(vs) {
+      if (vs.selected < 0) return;
+      const prev = vs.litPoints, prevSeeds = vs.seedPoints;
+      for (let i = 0; i < prev.length; i++) { vs.focus[prev[i]] = 0; vs.sizes[prev[i]] = vs.litSizes[i]; }
+      vs.selected = -1;
+      vs.litPoints = []; vs.litSizes = []; vs.seedPoints = [];
+      vs.dimOthers = vs.explore;
+      let linksChanged = false;
+      if (vs.dimOthers) {
+        repaintPoints(vs, prev);
+        if (vs.showLinks && vs.linksLit) { colourSeedLinks(vs, prevSeeds, LINK_OUT); linksChanged = true; }
+      } else {
+        repaintAll(vs);
+        if (vs.showLinks) { fillLinks(vs, LINK_BASE); linksChanged = true; }
+      }
+      vs.linksLit = false;
+      refreshGraph(vs, linksChanged);
+    }
+
+    // Unpin, hide the card, drop the focus (Escape, unticking Explore, inference).
+    function clearSelection() {
+      const vs = viewState;
+      document.getElementById('recap').hidden = true;
+      if (!vs) return;
+      vs.pinned = -1;
+      dropFocus(vs);
+    }
+
+    // --- Explore button ---
+    let exploreOn = false; // the user's setting; survives graph rebuilds
+
+    function buildExploreControl() {
+      const box = document.createElement('div');
+      box.id = 'explore-box';
+      box.innerHTML = '<button id="explore-btn" type="button" aria-pressed="false"></button>';
+      box.querySelector('#explore-btn').addEventListener('click', () => setExplore(!exploreOn));
+      queueMicrotask(syncExploreButton);
+      return box;
+    }
+
+    // No permanent hint text any more (kept minimal): the explanation lives
+    // in the button's title tooltip instead.
+    function syncExploreButton() {
+      const btn = document.getElementById('explore-btn');
+      if (!btn) return;
+      btn.classList.toggle('on', exploreOn);
+      btn.setAttribute('aria-pressed', String(exploreOn));
+      btn.textContent = exploreOn ? 'Exploring — click to exit' : 'Explore';
+      btn.title = exploreOn
+        ? 'Hover a point to light its sub-network. Click to pin it, click again to release.'
+        : 'Darkens the graph, then lights the sub-network of whatever you hover.';
+    }
+
+    function setExplore(on) {
+      exploreOn = on;
+      syncExploreButton();
+      const vs = viewState;
+      if (!vs || !graph || vs.explore === on) return;
+      if (!on) {
+        clearSelection();               // unpin, hide the card; still dark because vs.explore is still true
+        vs.explore = false;
+        vs.dimOthers = false;
+        repaintAll(vs);
+        if (vs.showLinks) { ensureLinkIndex(vs); fillLinks(vs, LINK_BASE); vs.linksLit = false; }
+        refreshGraph(vs, vs.showLinks);
+        return;
+      }
+      prepareView();
+      vs.explore = true;
+      vs.dimOthers = true;              // dark by default; a pinned network (if any) stays lit
+      repaintAll(vs);
+      if (vs.showLinks) {
+        ensureLinkIndex(vs);
+        fillLinks(vs, LINK_OUT);
+        vs.linksLit = vs.pinned >= 0;
+        if (vs.linksLit) colourSeedLinks(vs, vs.seedPoints, LINK_LIT);
+      }
+      refreshGraph(vs, vs.showLinks);
+    }
+
+    // --- Hover, click ---
+    // Show point t's network as a preview (t < 0: nothing under the mouse).
+    function previewNode(vs, t) {
+      if (t === vs.selected) return;
+      if (t < 0 || t >= vs.ids.length) { dropFocus(vs); document.getElementById('recap').hidden = true; return; }
+      showRecap(vs, vs.ids[t], applyFocus(vs, t, vs.links.length / 2 <= HOVER_LINKS_MAX), false);
+    }
+
+    // cosmos calls this on entering a point (index) and leaving it (undefined);
+    // moving from one point to the next gives both in a row, so the work is
+    // done once, right after, still before the next frame. While a network is
+    // pinned the hover changes nothing.
+    let hoverTarget = -1, hoverQueued = false;
+    function onPointHover(id, index) {
+      const vs = viewState;
+      if (id !== renderId || !vs || !vs.explore || vs.pinned >= 0 || vs.revealing) return;
+      hoverTarget = index === undefined ? -1 : index;
+      if (hoverQueued) return;
+      hoverQueued = true;
+      queueMicrotask(() => {
+        hoverQueued = false;
+        const v = viewState;
+        if (v && v.explore && v.pinned < 0 && !v.revealing) previewNode(v, hoverTarget);
+      });
+    }
+
+    // First click pins the network under the mouse; the next click (on a point
+    // or not) releases it, and with Explore on whatever is under the mouse
+    // takes over.
+    function onPointClick(id, index) {
+      const vs = viewState;
+      if (id !== renderId || !vs || vs.revealing) return;
+      if (vs.pinned >= 0) {
+        vs.pinned = -1;
+        document.getElementById('recap').hidden = true;
+        dropFocus(vs);
+        if (vs.explore && index !== undefined) previewNode(vs, index);
+        return;
+      }
+      if (index === undefined || index >= vs.ids.length) return;
+      vs.pinned = index;
+      // Already previewed with its links: reuse it. Otherwise (other point, or a preview without links) light it properly.
+      const ego = vs.selected === index && (vs.linksLit || !vs.showLinks) ? egoOf(vs.ids[index]) : applyFocus(vs, index, true);
+      showRecap(vs, vs.ids[index], ego, true);
+    }
+
+    // --- Recap card ---
+    // `full` (pinned): adds the close button and the list of profiles.
+    function showRecap(vs, g, ego, full) {
+      const T = inf, box = document.getElementById('recap');
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text !== undefined) e.textContent = text;
+        return e;
+      };
+      const row = (cls, a, b) => { const r = el('div', cls); r.append(el('span', '', a), el('span', '', b)); return r; };
+      const plural = (n, word) => `${n.toLocaleString()} ${word}${n === 1 ? '' : 's'}`;
+      box.replaceChildren();
+
+      const head = el('div', 'head');
+      const id = el('span', 'id', `ID ${g}`);
+      id.title = 'Index of this profile in the data files. Not the real account id, which is not in the data.';
+      head.append(id, el('span', 'badge', ego.isSeed ? 'Seed' : 'Following'));
+      if (full) {
+        const close = el('button', 'close', '×');
+        close.type = 'button';
+        close.title = 'Release (click again, or Esc)';
+        close.addEventListener('click', clearSelection);
+        head.append(close);
+      }
+      box.append(head, el('div', 'loc', locationOf(g).text));
+
+      if (ego.isSeed) {
+        const also = ego.seedsOf.length ? ` · also followed by ${plural(ego.seedsOf.length, 'seed')}` : '';
+        box.append(el('div', 'muted', `Follows ${plural(ego.net.length, 'profile')}${also}`));
+      } else {
+        box.append(el('h4', '', `Followed by ${plural(ego.seeds.length, 'seed')}`));
+        const list = el('div', 'list');
+        for (const s of ego.seeds.slice(0, 10)) list.append(row('li', `#${s}`, locationOf(s).text));
+        if (ego.seeds.length > 10) list.append(el('div', 'muted', `… and ${ego.seeds.length - 10} more`));
+        box.append(list);
+      }
+
+      // The network: how big, how much is on screen, where it is.
+      const members = ego.net, counts = new Int32Array(T.catLabels.length);
+      let shown = 0;
+      for (const t of members) { counts[categoryOf(vs, t)]++; if (vs.pointOf[t] >= 0) shown++; }
+      box.append(el('h4', '', ego.isSeed ? 'Followings' : 'Their followings'));
+      box.append(el('div', 'muted', `${plural(members.length, 'profile')} · ${shown.toLocaleString()} shown on screen`));
+      const used = [];
+      for (let c = 0; c < counts.length; c++) if (counts[c]) used.push(c);
+      used.sort((a, b) => counts[b] - counts[a]);
+      for (const c of used.slice(0, 6)) box.append(row('bd', T.catLabels[c], `${counts[c].toLocaleString()} (${Math.round(100 * counts[c] / members.length)}%)`));
+      if (used.length > 6) {
+        const rest = members.length - used.slice(0, 6).reduce((s, c) => s + counts[c], 0);
+        box.append(row('bd muted', `${used.length - 6} other locations`, rest.toLocaleString()));
+      }
+
+      // The list of profiles, only once pinned: located first, unknown last.
+      if (full && members.length) {
+        const buckets = [[], [], [], [], []];
+        for (const t of members) buckets[T.catRank[categoryOf(vs, t)]].push(t);
+        const shownIds = [];
+        for (const b of buckets) {
+          if (shownIds.length >= RECAP_LIST_MAX) break;
+          b.sort((x, y) => x - y);
+          for (const t of b) { shownIds.push(t); if (shownIds.length >= RECAP_LIST_MAX) break; }
+        }
+        const list = el('div', 'list');
+        for (const t of shownIds) list.append(row('li', `#${t}`, locationOf(t).text));
+        if (members.length > shownIds.length) list.append(el('div', 'muted', `… and ${(members.length - shownIds.length).toLocaleString()} more`));
+        box.append(list);
+      }
+
+      // Fixed place, wherever the sub-network is: down the left edge, below
+      // the legend and above the inference controls, so it doesn't cover the
+      // network (the cloud sits in the middle of the screen). Its height
+      // shrinks to fit the room left there; the list scrolls.
+      const wasHidden = box.hidden;
+      box.hidden = false;
+      if (wasHidden || full) {
+        const top = Math.max(12, document.getElementById('legend').getBoundingClientRect().bottom + 10);
+        const infer = document.getElementById('infer');
+        const reserved = infer.hidden ? 12 : innerHeight - infer.getBoundingClientRect().top + 8;
+        box.style.left = '12px';
+        box.style.top = top + 'px';
+        box.style.maxHeight = Math.max(180, innerHeight - top - reserved) + 'px';
+      }
+      box.scrollTop = 0;
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') clearSelection(); });
+
+    // =====================================================================
+    // City inference
+    //
+    // Profiles with a known country but no city (and, optionally, profiles
+    // with no country at all) get the city their seeds mostly follow.
+    // Edge convention as everywhere: source = follower, target = following.
+    //
+    //  1. A seed's profile = how its *located* followings (those in one of
+    //     the cities of filters.json) split across cities.
+    //  2. A seed qualifies when it has >= X located followings and its top
+    //     city holds >= Y of the total, where every city's count is first
+    //     multiplied by share^-alpha (share = the city's part of its
+    //     country's profiles). alpha = 0 leaves raw counts alone; alpha
+    //     -> 1 boosts small cities. On a hold-out test (hide a located
+    //     profile's city, predict it) alpha > 0 lowered accuracy, hence the
+    //     default of 0.
+    //  3. Every qualifying seed hands its top city to its not-yet-assigned
+    //     followings; seeds go most-confident first, so a profile followed
+    //     by several seeds keeps the city of the most confident one. A
+    //     profile with a known country only takes a city of that country.
+    //
+    // The whole computation is tens of ms, so the assignments are computed
+    // up front and then *revealed* over INFER_DURATION_MS, most confident
+    // seeds first. The reveal is driven by the clock, not by a frame count,
+    // so it lasts the same on a fast or a slow machine.
+    // =====================================================================
+    const INFERRED_ALPHA = 1;        // opaque: translucent inferred points were too easy to miss
+    const INFERRED_SIZE = 4;         // same size as a known-location point (unknown ones start at 2)
+    const INFER_PULSE_SIZE = 6;      // a point that has just been coloured is drawn this big...
+    const INFER_PULSE_MS = 350;      // ...for this long, so the progress is easy to follow
+    const INFER_DURATION_MS = 3500;  // total length of the reveal
+    let inf = null;            // lookup tables shared by every run, built once (see initInference)
+    let inferRun = 0;           // bumped to cancel a running animation
+
+    // Lookup tables that only depend on the data, not on the current view:
+    // node -> city / country / has-a-state, per-seed city counts, and the
+    // out-edge lists (CSR) to walk from a seed to its followings.
+    function initInference() {
+      if (inf) return inf;
+      const n = filtersData.node_count;
+      const codes = Object.keys(filtersData.countries);
+      const cities = [];
+      const cityId = new Int16Array(n).fill(-1);
+      const countryIdx = new Int16Array(n).fill(-1);
+      const hasState = new Uint8Array(n);
+      const stateId = new Int16Array(n).fill(-1);
+      const stateLabels = [];
+      codes.forEach((code, ci) => {
+        const entry = filtersData.countries[code];
+        for (const idx of entry.indices) countryIdx[idx] = ci;
+        for (const [slug, c] of Object.entries(entry.cities)) {
+          const id = cities.length;
+          cities.push({ key: `city:${code}:${slug}`, label: c.label, country: ci, share: c.indices.length / entry.indices.length });
+          for (const idx of c.indices) if (cityId[idx] < 0) cityId[idx] = id;
+        }
+        if (entry.states) {
+          for (const s of Object.values(entry.states)) {
+            const id = stateLabels.length;
+            stateLabels.push(s.label);
+            for (const idx of s.indices) { hasState[idx] = 1; if (stateId[idx] < 0) stateId[idx] = id; }
+          }
+        }
+      });
+
+      const nC = cities.length;
+      const seedRow = new Int32Array(n).fill(-1);
+      const seedIdList = [];
+      for (let e = 0; e < edges.length; e += 2) {
+        const s = edges[e], d = edges[e + 1];
+        if (s !== d && cityId[d] >= 0 && seedRow[s] < 0) { seedRow[s] = seedIdList.length; seedIdList.push(s); }
+      }
+      const counts = new Uint32Array(seedIdList.length * nC);
+      for (let e = 0; e < edges.length; e += 2) {
+        const s = edges[e], d = edges[e + 1];
+        if (s !== d && cityId[d] >= 0) counts[seedRow[s] * nC + cityId[d]]++;
+      }
+
+      const outPtr = new Int32Array(n + 1);
+      for (let e = 0; e < edges.length; e += 2) outPtr[edges[e] + 1]++;
+      for (let i = 0; i < n; i++) outPtr[i + 1] += outPtr[i];
+      const fill = outPtr.slice(0, n);
+      const outIdx = new Int32Array(edges.length / 2);
+      for (let e = 0; e < edges.length; e += 2) outIdx[fill[edges[e]]++] = edges[e + 1];
+
+      // The same lists the other way round: who follows a given profile.
+      const inPtr = new Int32Array(n + 1);
+      for (let e = 0; e < edges.length; e += 2) inPtr[edges[e + 1] + 1]++;
+      for (let i = 0; i < n; i++) inPtr[i + 1] += inPtr[i];
+      const fillIn = inPtr.slice(0, n);
+      const inIdx = new Int32Array(edges.length / 2);
+      for (let e = 0; e < edges.length; e += 2) inIdx[fillIn[edges[e + 1]]++] = edges[e];
+
+      // Location categories, one small integer per profile, for the recap's
+      // breakdown: a city, a state, "country, city unknown" or unknown; then
+      // one more per city for profiles whose city was inferred.
+      const catLabels = [], catRank = [];
+      const addCat = (label, rank) => { catLabels.push(label); catRank.push(rank); return catLabels.length - 1; };
+      const cityCat = cities.map(c => addCat(c.label, 0));
+      const stateCat = stateLabels.map(s => addCat(`${s} (state)`, 2));
+      const countryCat = codes.map(code => addCat(`${filtersData.countries[code].label} (city unknown)`, 3));
+      const unknownCat = addCat('Unknown', 4);
+      const inferredCat0 = catLabels.length;
+      cities.forEach(c => addCat(`${c.label} (inferred)`, 1));
+      const catOf = new Uint16Array(n).fill(unknownCat);
+      for (let i = 0; i < n; i++) {
+        if (cityId[i] >= 0) catOf[i] = cityCat[cityId[i]];
+        else if (stateId[i] >= 0) catOf[i] = stateCat[stateId[i]];
+        else if (countryIdx[i] >= 0) catOf[i] = countryCat[countryIdx[i]];
+      }
+
+      inf = {
+        codes, cities, cityId, countryIdx, hasState, stateId, stateLabels,
+        catOf, catLabels, catRank, inferredCat0,
+        seedIds: Int32Array.from(seedIdList), nSeeds: seedIdList.length, counts,
+        outPtr, outIdx, inPtr, inIdx,
+      };
+      return inf;
+    }
+
+    // Per-view tables: which on-screen points can be inferred.
+    //   kind 1 = country known, no city and no state
+    //   kind 2 = no country at all ("Unknown Location")
+    // Profiles that already have a city or a state are never touched.
+    function prepareView() {
+      const vs = viewState;
+      if (vs.kind) return;
+      const T = initInference();
+      const mask = getUnknownMask();
+      vs.kind = new Uint8Array(vs.ids.length);
+      vs.pointOf = new Int32Array(filtersData.node_count).fill(-1);
+      for (let i = 0; i < vs.ids.length; i++) {
+        const g = vs.ids[i];
+        vs.pointOf[g] = i;
+        if (T.cityId[g] >= 0 || T.hasState[g]) continue;
+        if (T.countryIdx[g] >= 0) { vs.kind[i] = 1; vs.nCountryOnly++; }
+        else if (mask[g]) { vs.kind[i] = 2; vs.nNoCountry++; }
+      }
+    }
+
+    function markSimDone(id) {
+      if (id !== renderId || simDone) return;
+      simDone = true;
+      updateInferUi();
+    }
+
+    // The controls exist only once the layout has settled and the view has
+    // at least one profile whose city is missing.
+    function updateInferUi() {
+      const box = document.getElementById('infer');
+      inferRun++; // cancels an animation still running on a replaced graph
+      document.getElementById('infer-panel').hidden = true;
+      document.getElementById('infer-status').textContent = '';
+      if (!simDone || !viewState) { box.hidden = true; return; }
+      prepareView();
+      box.hidden = viewState.nCountryOnly + viewState.nNoCountry === 0;
+    }
+
+    // Back to the colours (and legend) as first drawn, before any inference.
+    // Dimmed entries stay dimmed; only the entries inference created go away.
+    function restoreBase(vs) {
+      setExplore(false);   // Explore and a pinned network both recolour and resize points too
+      clearSelection();
+      vs.raw.set(vs.baseColors);
+      vs.nodeKey.set(vs.baseNodeKey);
+      vs.sizes.set(vs.baseSizes);
+      vs.inferredCity.fill(-1);
+      for (const e of vs.extras) vs.dimFlag[vs.keyIndex.get(e.key)] = false;
+      vs.extras = [];
+      vs.inferredColors.clear();
+      vs.extraSlots = 0;
+      vs.otherRow = false;
+      repaintAll(vs);
+      renderLegend(vs);
+    }
+
+    // Look of a point inferred to a given city: {col, keyIdx}. It joins that
+    // city's legend entry if the city is one of the checked groups (so
+    // dimming "Los Angeles" dims inferred Los Angeles points too), otherwise
+    // it gets the next free palette slot (then grey) and a legend row of its
+    // own, added on first use.
+    function inferredStyle(vs, cityIdx) {
+      let s = vs.inferredColors.get(cityIdx);
+      if (s) return s;
+      const city = inf.cities[cityIdx];
+      let base = vs.groupColor[city.key], key = city.key;
+      if (!base) {
+        const slot = vs.knownCount + vs.extraSlots;
+        if (slot < CATEGORICAL_PALETTE.length) {
+          vs.extraSlots++;
+          base = hexToRgba(CATEGORICAL_PALETTE[slot], 1);
+          const e = { key, css: CATEGORICAL_PALETTE[slot], text: `${city.label} (inferred)` };
+          vs.extras.push(e);
+          addLegendRow(vs, e.key, e.css, e.text);
+        } else {
+          base = hexToRgba(OTHER_COLOR, 1);
+          key = 'other-inferred';
+          if (!vs.otherRow) {
+            vs.otherRow = true;
+            const e = { key, css: OTHER_COLOR, text: 'Other inferred cities' };
+            vs.extras.push(e);
+            addLegendRow(vs, e.key, e.css, e.text);
+          }
+        }
+      }
+      s = { col: [base[0], base[1], base[2], INFERRED_ALPHA], keyIdx: registerKey(vs, key) };
+      vs.inferredColors.set(cityIdx, s);
+      return s;
+    }
+
+    function runInference() {
+      const vs = viewState, g = graph;
+      if (!vs || !g || !simDone) return;
+      const T = initInference();
+      prepareView();
+      const status = document.getElementById('infer-status');
+
+      const X = +document.getElementById('infer-x').value;
+      const Y = +document.getElementById('infer-y').value / 100;
+      const alpha = +document.getElementById('infer-alpha').value;
+      const includeNoCountry = document.getElementById('infer-nocountry').checked;
+      const eligible = vs.nCountryOnly + (includeNoCountry ? vs.nNoCountry : 0);
+      const run = ++inferRun;
+
+      restoreBase(vs);
+      g.setPointColors(vs.colors);
+      g.setPointSizes(vs.sizes);
+      g.render();
+      if (eligible === 0) {
+        status.textContent = 'Nothing to infer here: only profiles with no country are shown, tick "Include profiles with no country".';
+        return;
+      }
+
+      // Seeds that qualify, most confident first.
+      const nC = T.cities.length;
+      const w = T.cities.map(c => c.share ** -alpha);
+      const qual = [];
+      for (let r = 0; r < T.nSeeds; r++) {
+        let n = 0, total = 0, best = -1, bestV = 0;
+        for (let c = 0; c < nC; c++) {
+          const k = T.counts[r * nC + c];
+          if (!k) continue;
+          n += k;
+          const v = k * w[c];
+          total += v;
+          if (v > bestV) { bestV = v; best = c; }
+        }
+        if (n >= X && best >= 0 && bestV / total >= Y) qual.push([bestV / total, r, best]);
+      }
+      qual.sort((a, b) => b[0] - a[0]);
+      if (qual.length === 0) {
+        status.textContent = 'No seed passes these thresholds: lower X or Y.';
+        return;
+      }
+
+      // Assign every eligible profile up front, in seed-confidence order
+      // (first seed to claim a profile keeps it): pts[i] = point index,
+      // cts[i] = its inferred city.
+      const claimed = new Uint8Array(vs.ids.length);
+      const pts = [], cts = [];
+      for (const [, r, c] of qual) {
+        const s = T.seedIds[r], cityCountry = T.cities[c].country;
+        for (let k = T.outPtr[s]; k < T.outPtr[s + 1]; k++) {
+          const t = T.outIdx[k], p = vs.pointOf[t];
+          if (p < 0 || claimed[p]) continue;
+          const kind = vs.kind[p];
+          if (kind === 1) { if (T.countryIdx[t] !== cityCountry) continue; }
+          else if (kind !== 2 || !includeNoCountry) continue;
+          claimed[p] = 1;
+          pts.push(p);
+          cts.push(c);
+        }
+      }
+      const total = pts.length;
+      if (total === 0) {
+        status.textContent = 'No shown profile is followed by a qualifying seed.';
+        return;
+      }
+
+      // Reveal them over INFER_DURATION_MS. Points revealed in the last
+      // INFER_PULSE_MS are drawn big, then settle to INFERRED_SIZE.
+      const start = performance.now();
+      const pulseShare = INFER_PULSE_MS / INFER_DURATION_MS;
+      let shown = 0;      // pts[0..shown) are coloured
+      let settled = 0;    // pts[0..settled) are back to their normal size
+      const step = () => {
+        if (run !== inferRun || g !== graph || vs !== viewState) return; // cancelled or graph replaced
+        const progress = Math.min(1, (performance.now() - start) / INFER_DURATION_MS);
+        const target = progress >= 1 ? total : Math.floor(total * progress);
+        const settleTo = progress >= 1 ? total : Math.min(target, Math.floor(total * Math.max(0, progress - pulseShare)));
+
+        for (let i = shown; i < target; i++) {
+          const s = inferredStyle(vs, cts[i]);
+          vs.raw.set(s.col, pts[i] * 4);
+          vs.nodeKey[pts[i]] = s.keyIdx;
+          vs.inferredCity[pts[i]] = cts[i];
+          paintPoint(vs, pts[i]);
+          vs.sizes[pts[i]] = INFER_PULSE_SIZE;
+        }
+        for (let i = settled; i < settleTo; i++) vs.sizes[pts[i]] = INFERRED_SIZE;
+        shown = target;
+        settled = Math.max(settled, settleTo);
+
+        refreshGraph(vs, false);
+
+        const pct = (100 * shown / eligible).toFixed(1);
+        status.textContent = progress < 1
+          ? `Inferring... ${shown.toLocaleString()} of ${eligible.toLocaleString()} (${pct}%)`
+          : `${total.toLocaleString()} of ${eligible.toLocaleString()} profiles inferred (${pct}%), from ${qual.length.toLocaleString()} seeds`;
+        if (progress < 1) requestAnimationFrame(step);
+        else vs.revealing = false;
+      };
+      vs.revealing = true; // clicks don't select a point while the reveal is recolouring and resizing
+      requestAnimationFrame(step);
+    }
+
+    function resetInference() {
+      const vs = viewState;
+      if (!vs || !graph) return;
+      inferRun++;
+      vs.revealing = false;
+      restoreBase(vs);
+      graph.setPointColors(vs.colors);
+      graph.setPointSizes(vs.sizes);
+      graph.render();
+      document.getElementById('infer-status').textContent = '';
+    }
+
+    // --- Controls wiring ---
+    (() => {
+      const $ = id => document.getElementById(id);
+      const bind = (id, fmt) => {
+        const input = $(id), label = $(id + '-val');
+        const sync = () => { label.textContent = fmt(input.value); };
+        input.addEventListener('input', sync);
+        sync();
+      };
+      bind('infer-x', v => v);
+      bind('infer-y', v => v + '%');
+      bind('infer-alpha', v => (+v).toFixed(2));
+      $('infer-open').addEventListener('click', () => { $('infer-panel').hidden = !$('infer-panel').hidden; });
+      $('infer-run').addEventListener('click', runInference);
+      $('infer-reset').addEventListener('click', resetInference);
+    })();
   </script>
 </body>
 </html>
