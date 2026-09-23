@@ -14,12 +14,13 @@ This dataset was collected and anonymised by **Noritual Lab**, a brand of Ancora
 
 The data lives in two simple files:
 
-- **`data/graph_edges.bin`** — a raw `Int32Array` (32-bit integers, **little-endian**), read two at a time as `[source, target]` pairs. `source` is the follower (the "seed" side of the relation), `target` is the following. The byte order is worth spelling out: it's a no-op on effectively every real machine today, but it's an easy silent-garbage trap for the wrong reader — JavaScript's own `DataView`, for instance, defaults to *big*-endian unless told otherwise.
-- **`data/filters.json`** — indexed by *location*, not by profile: every known city, state (US only) and country holds the list of profile indices found there, plus a top-level `"unknown"` list for the rest. It's the opposite of a profile → location lookup, and uses the exact same indices as `graph_edges.bin`.
+- **`data/graph_edges.bin`** — a raw `Int32Array` (32-bit integers, little-endian), read two at a time as `[source, target]` pairs. `source` is the follower (the "seed" side of the relation), `target` is the following. This flat layout isn't the most compact one possible for this data (grouping each source with an explicit count of its followings would pack the file to about half the size, since the same source is repeated once per edge). It's chosen instead because it's exactly the format the page's rendering library ([cosmos.gl](https://www.npmjs.com/package/@cosmograph/cosmos)) takes as input, so the fetched bytes go straight into `graph.setLinks()` with no parsing step.
 
-**Note:** the indices used in both files are just positions in an anonymised, re-numbered array built for this export — they are in no way linked to the profiles' real ids on the source platform.
+- **`data/filters.json`** — indexed by location: every known city, state (US only) and country holds the list of profile indices found there, plus a top-level `"unknown"` list for the rest. It uses the exact same indices as `graph_edges.bin`.
 
-**[`scripts/read_data.py`](scripts/read_data.py)** is a minimal, dependency-free reader (standard library only) that loads both files correctly — including building the profile → location lookup `filters.json` doesn't give you directly — as a starting point for reading this data outside the browser page.
+**Note:** the indices used in both files are just positions in an anonymised array built for this export — they are in no way linked to the profiles' real ids on the source platform.
+
+**[`scripts/read_data.py`](scripts/read_data.py)** is a minimal reader that loads both files correctly and give some data. 
 
 Location remains unknown for the large majority of profiles: about 78% (580,450 of 746,210).
 
@@ -27,29 +28,29 @@ Location remains unknown for the large majority of profiles: about 78% (580,450 
 
 This tool was primarily built to see whether cities would cluster naturally under an algorithm that computes point placement from the graph's structure alone. Every cluster visible in the graph comes from that placement algorithm — no location data is ever fed into it. A uniform repulsion pushes every pair of points apart regardless of whether they're connected, while an attraction force pulls directly-linked profiles together; a city "cluster" is really just many profiles pulled toward the same shared seeds, close enough to each other as a side effect. Colour, which does use location, is applied afterwards and never influences where a point sits.
 
-For more on the underlying force-directed algorithm, see [cosmos.gl](https://github.com/cosmograph-org/cosmograph) (credited below).
+For more on the underlying force-directed algorithm, see [cosmos.gl's docs](https://cosmograph.app) (credited below).
 
 ## What you can see
 
 - **City clusters**, as described above.
 
   ![City clusters](assets/clusters.png)
-  *Caption: —*
+  *Clusters accross germany and the us*
 
 - **Inferring unknown locations from social neighbourhoods.** A basic heuristic is built into the tool: for a following with an unknown location, assign it a location *l* if the seed(s) reaching it already follow a large-enough share of profiles located in *l* (with an optional correction for a city's relative size, so large cities don't win purely by being large). This is meant for exploring the inference visually — check "Unknown Location" and tune the parameters in the panel to see it in action.
 - **Flowers** — the canonical example of profiles discovered through a single seed. A "flower" is a small cluster loosely attached to the main graph, with few connections to any cluster's centre, suggesting a borderline placement. Their presence is a rough gauge of scraping saturation: as long as flowers keep appearing, there's still room for the scrape to grow further.
 
   ![A flower: a seed's followings, loosely attached to the main graph](assets/us_flower.png)
-  *Caption: —*
+  *A Los Angeles seed following other different cities*
 
 - **Aggregates** — profiles whose location isn't one of the seeded regions; New York is the clearest example. Since none of these profiles' own followings were ever scraped, there are no edges linking them to each other — they only connect to the graph through whichever seed discovered them. As a result they never form a genuine, self-reinforcing cluster of their own; they simply sit wherever that seed's network placed them.
 
   ![New York profiles clumped together despite having no edges between them](assets/nyc_aggregate.png)
-  *Caption: —*
+  *The New York aggregate : spread accross the whole graph*
 
 ## Credits
 
-Node placement and rendering are powered by [cosmos.gl](https://github.com/cosmograph-org/cosmograph) (`@cosmograph/cosmos`), pinned at version 2.5.1 — the last release with 3D support before it was dropped in the 3.x line. cosmos.gl is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
+Node placement and rendering are powered by [cosmos.gl](https://www.npmjs.com/package/@cosmograph/cosmos) (`@cosmograph/cosmos`), pinned at version 2.5.1 — the last release with 3D support before it was dropped in the 3.x line. cosmos.gl is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
 
 ## Internship
 
@@ -59,3 +60,4 @@ Noritual Lab is a matcha brand based between Berlin and Tokyo, with two main act
 - **B2C** (business-to-consumer): selling matcha directly to individual customers
 
 I joined as a Growth Engineering intern on the B2C side for summer 2026. My mission was precise: massively automate influencer sourcing and outreach on social media, to build partnerships and brand visibility. That mission included a web-scraping component, which is where the data for this project comes from.
+
