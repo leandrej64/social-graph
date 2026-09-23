@@ -1,5 +1,7 @@
 # Social Graph
 
+**[Open the live visualization →](https://leandrej64.github.io/social-graph/)**
+
 ## Overview
 
 This repository holds roughly 746,000 anonymised profiles and close to 1.5 million relations between them, scraped from a well-known social media platform, together with the static page that visualises them as a graph of directed follower ("seed") → following relationships.
@@ -12,10 +14,12 @@ This dataset was collected and anonymised by **Noritual Lab**, a brand of Ancora
 
 The data lives in two simple files:
 
-- **`data/graph_edges.bin`** — a raw `Int32Array` (32-bit integers, little-endian), read two at a time as `[source, target]` pairs. `source` is the follower (the "seed" side of the relation), `target` is the following.
-- **`data/filters.json`** — one entry per profile giving its city, state (US only) and country where known, or marking it as unknown. It uses the exact same indices as `graph_edges.bin`.
+- **`data/graph_edges.bin`** — a raw `Int32Array` (32-bit integers, **little-endian**), read two at a time as `[source, target]` pairs. `source` is the follower (the "seed" side of the relation), `target` is the following. The byte order is worth spelling out: it's a no-op on effectively every real machine today, but it's an easy silent-garbage trap for the wrong reader — JavaScript's own `DataView`, for instance, defaults to *big*-endian unless told otherwise.
+- **`data/filters.json`** — indexed by *location*, not by profile: every known city, state (US only) and country holds the list of profile indices found there, plus a top-level `"unknown"` list for the rest. It's the opposite of a profile → location lookup, and uses the exact same indices as `graph_edges.bin`.
 
 **Note:** the indices used in both files are just positions in an anonymised, re-numbered array built for this export — they are in no way linked to the profiles' real ids on the source platform.
+
+**[`scripts/read_data.py`](scripts/read_data.py)** is a minimal, dependency-free reader (standard library only) that loads both files correctly — including building the profile → location lookup `filters.json` doesn't give you directly — as a starting point for reading this data outside the browser page.
 
 Location remains unknown for the large majority of profiles: about 78% (580,450 of 746,210).
 
@@ -28,9 +32,20 @@ For more on the underlying force-directed algorithm, see [cosmos.gl](https://git
 ## What you can see
 
 - **City clusters**, as described above.
+
+  ![City clusters](assets/clusters.png)
+  *Caption: —*
+
 - **Inferring unknown locations from social neighbourhoods.** A basic heuristic is built into the tool: for a following with an unknown location, assign it a location *l* if the seed(s) reaching it already follow a large-enough share of profiles located in *l* (with an optional correction for a city's relative size, so large cities don't win purely by being large). This is meant for exploring the inference visually — check "Unknown Location" and tune the parameters in the panel to see it in action.
 - **Flowers** — the canonical example of profiles discovered through a single seed. A "flower" is a small cluster loosely attached to the main graph, with few connections to any cluster's centre, suggesting a borderline placement. Their presence is a rough gauge of scraping saturation: as long as flowers keep appearing, there's still room for the scrape to grow further.
+
+  ![A flower: a seed's followings, loosely attached to the main graph](assets/us_flower.png)
+  *Caption: —*
+
 - **Aggregates** — profiles whose location isn't one of the seeded regions; New York is the clearest example. Since none of these profiles' own followings were ever scraped, there are no edges linking them to each other — they only connect to the graph through whichever seed discovered them. As a result they never form a genuine, self-reinforcing cluster of their own; they simply sit wherever that seed's network placed them.
+
+  ![New York profiles clumped together despite having no edges between them](assets/nyc_aggregate.png)
+  *Caption: —*
 
 ## Credits
 
