@@ -3,26 +3,76 @@
 <head>
   <meta charset="utf-8">
   <title>Network graph - 3D (cosmos.gl)</title>
+
+  <!-- Link-preview metadata (LinkedIn, Twitter/X, etc.): their crawlers fetch
+       this HTML only -- no JS, no WebGL, no canvas -- so without these tags
+       they'd show a blank or default thumbnail. og:image must be an absolute
+       https URL (a relative path silently fails). -->
+  <meta property="og:title" content="Social Graph — Noritual Lab">
+  <meta property="og:description" content="An anonymized social-following graph — 746k profiles, 1.5M relations — released open source by Noritual Lab, visualized in 3D.">
+  <meta property="og:url" content="https://leandrej64.github.io/social-graph/">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://leandrej64.github.io/social-graph/assets/preview.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Social Graph — Noritual Lab">
+  <meta name="twitter:description" content="An anonymized social-following graph — 746k profiles, 1.5M relations — released open source by Noritual Lab, visualized in 3D.">
+  <meta name="twitter:image" content="https://leandrej64.github.io/social-graph/assets/preview.jpg">
+
   <style>
-    body { margin: 0; background: #0d0d0d; overflow: hidden; font-family: system-ui, sans-serif; color: #ddd; }
+    /* Design tokens. A handful of buttons/panels used to each hardcode their
+       own near-identical blue, radius and grey border -- the generic
+       "Bootstrap primary + 4px radius + #333 border" combo that shows up in
+       every templated dashboard. Centralising them here isn't just tidier:
+       changing --accent/--radius/--border in one place now actually changes
+       the whole page's character instead of the usual copy-pasted values
+       silently drifting apart. --mono is for numbers specifically (counts,
+       ids, the node/edge readout) -- tabular figures read as measured data,
+       not as another line of UI copy.
+       Colours and fonts below are sampled from Noritual Lab's own slide deck
+       (matcha green + warm gold on a cream base, Cambria/Calibri/Consolas),
+       not invented: --accent/--accent-hover from the deck's dark matcha
+       greens (#1F4E2C/#35502B family, also close to the #1a7f5a used in
+       their internal tools), --accent-ink from its pale sage (#C9D9CC), and
+       --accent-warm from its muted gold (#B8933E), kept for states that need
+       to read as a *different* signal than the primary green (Explore "on"),
+       not another shade of it. The page stays dark -- only accents moved. */
+    :root {
+      --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+      --radius: 3px;
+      --accent: #3f7d54; --accent-hover: #4f9367; --accent-ink: #c9d9cc;
+      --accent-warm: #b8933e; --accent-warm-hover: #c8a655;
+      --border: rgba(255,255,255,0.10);
+      --font-heading: Cambria, Georgia, serif;
+      --mono: Consolas, ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', monospace;
+    }
+    body { margin: 0; background: #0d0d0d; overflow: hidden; font-family: Calibri, system-ui, sans-serif; color: #ddd; }
     #graph { position: fixed; inset: 0; }
 
     #panel {
       position: fixed; top: 0; right: 0; bottom: 0; width: 300px;
-      background: #161616; border-left: 1px solid #333;
-      overflow-y: auto; padding: 16px; box-sizing: border-box;
+      background: #161616; border-left: 1px solid var(--border);
+      overflow-y: auto; padding: var(--sp-4); box-sizing: border-box;
       font-size: 13px;
       transition: transform 0.25s ease;
     }
     #panel.collapsed { transform: translateX(100%); }
+    /* Custom checkboxes: the browser's own native blue tick otherwise sits
+       oddly against a fully custom dark UI -- the clearest tell of a form
+       nobody bothered to style. accent-color is enough to make them match
+       without hand-rolling a checkbox from scratch. */
+    #panel input[type="checkbox"], #infer-panel input[type="checkbox"] {
+      accent-color: var(--accent); width: 13px; height: 13px; vertical-align: -2px;
+    }
     /* Small tab on the panel's left edge, vertically centred, that slides
        the panel fully off-screen. `right` tracks the panel's left edge
        (300px when open, 0 once it has slid away) so the tab always stays
        reachable at the viewport's edge. */
     #panel-toggle {
       position: fixed; top: 50%; right: 300px; transform: translateY(-50%);
-      width: 18px; height: 56px; padding: 0; border: 1px solid #333; border-right: none;
-      border-radius: 6px 0 0 6px; background: #161616; color: #9fd;
+      width: 18px; height: 56px; padding: 0; border: 1px solid var(--border); border-right: none;
+      border-radius: var(--radius) 0 0 var(--radius); background: #161616; color: var(--accent-ink);
       font-size: 12px; line-height: 1; cursor: pointer; z-index: 11;
       transition: right 0.25s ease;
     }
@@ -33,61 +83,77 @@
        it's open, same mechanism as #panel-toggle above. */
     #readme-link {
       position: fixed; top: 14px; right: 12px; z-index: 12;
-      color: #888; font: 12px system-ui, sans-serif; text-decoration: none;
+      color: #888; font: 15px system-ui, sans-serif; text-decoration: none;
       transition: right 0.25s ease;
     }
     #readme-link:hover { color: #fff; }
     #readme-link.panel-open { right: 312px; }
 
-    #panel h2 { font-size: 15px; margin: 0 0 12px; }
-    #panel h3 { font-size: 13px; margin: 16px 0 6px; color: #9fd; }
+    #panel h2 { font-size: 16px; margin: 0 0 var(--sp-3); font-family: var(--font-heading); font-weight: 700; }
+    #panel h3 { font-size: 14px; margin: var(--sp-4) 0 var(--sp-2); color: var(--accent-ink); font-family: var(--font-heading); }
     #panel .highlighted > h3 { color: #fff; font-size: 14px; }
     #panel label { display: block; padding: 2px 0; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #panel label:hover { color: #fff; }
     #panel input[type="checkbox"] { margin-right: 6px; }
-    #panel .columns { display: flex; gap: 12px; }
+    #panel .count { font-family: var(--mono); font-size: 11px; color: #888; }
+    #panel label:hover .count { color: #bbb; }
+    #panel .columns { display: flex; gap: var(--sp-3); }
     #panel .columns > div { flex: 1; min-width: 0; }
     #panel .columns h4 { font-size: 11px; text-transform: uppercase; color: #888; margin: 0 0 4px; }
-    #others-toggle { cursor: pointer; color: #9fd; user-select: none; margin-top: 16px; display: block; }
+    #others-toggle { cursor: pointer; color: var(--accent-ink); user-select: none; margin-top: var(--sp-4); display: block; }
     #others-content { display: none; padding-left: 4px; }
     #others-content.open { display: block; }
-    .more-toggle { cursor: pointer; color: #9fd; user-select: none; margin: 4px 0 2px; display: block; font-size: 12px; }
+    .more-toggle { cursor: pointer; color: var(--accent-ink); user-select: none; margin: 4px 0 2px; display: block; font-size: 12px; }
     /* #panel-scoped to outweigh `#panel .columns { display: flex }` (same
        specificity would otherwise leave source order deciding which wins). */
     #panel .more-content { display: none; margin-top: 4px; }
     #panel .more-content.open { display: flex; }
     #apply-btn {
-      position: sticky; bottom: 0; width: 100%; margin-top: 16px; padding: 10px;
-      background: #2a78d6; color: #fff; border: none; border-radius: 4px;
+      position: sticky; bottom: 0; width: 100%; margin-top: var(--sp-4); padding: var(--sp-3);
+      background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
       font-size: 13px; cursor: pointer;
     }
-    #apply-btn:hover { background: #3987e5; }
-    #status { position: fixed; top: 12px; left: 12px; color: #999; font: 12px system-ui, sans-serif; }
+    #apply-btn:hover { background: var(--accent-hover); }
+    #status {
+      position: fixed; top: 12px; left: 12px; color: #999;
+      font: 12px var(--mono); font-variant-numeric: tabular-nums;
+    }
     /* No card/frame on purpose -- the swatches and labels sit straight on
        the graph's own background. A soft text/drop shadow keeps them
        legible over bright points instead of a background plate. */
+    /* Size and opacity are the two knobs to retest here: font-size below,
+       swatch/eye sizes further down, and this opacity on the whole block. */
     #legend {
       position: fixed; top: 36px; left: 12px; color: #ccc;
-      font: 12px system-ui, sans-serif;
+      font: 10px system-ui, sans-serif;
+      opacity: 0.7;
     }
     #legend .row {
-      display: flex; align-items: center; gap: 6px; padding: 2px 0; white-space: nowrap;
+      display: flex; align-items: center; gap: 5px; padding: 2px 0; white-space: nowrap;
       text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7);
     }
     /* Gap above the first row of a new country's cluster (see countryOfKey
        in renderLegend) -- purely spacing, no printed country name unless
        that country's own checkbox made it a row of its own. */
-    #legend .row.group-start { margin-top: 10px; }
+    #legend .row.group-start { margin-top: 8px; }
     #legend .swatch {
-      width: 10px; height: 10px; border-radius: 50%; flex: none;
+      width: 8px; height: 8px; border-radius: 50%; flex: none;
       box-shadow: 0 0 4px rgba(0,0,0,0.85);
     }
-    #legend .label { flex: 1; padding-right: 10px; }
+    #legend .label { flex: 1; padding-right: 8px; }
+    /* A plain ring that fills in when shown, empties when dimmed -- instead
+       of a stock eye/eye-off icon-pack glyph (the single most recognisable
+       "didn't customise the UI kit" tell there is). */
     #legend .eye {
-      display: flex; align-items: center; background: none; border: none;
-      padding: 0; color: #aaa; cursor: pointer; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9));
+      display: flex; align-items: center; justify-content: center;
+      width: 11px; height: 11px; padding: 0; background: none; cursor: pointer;
+      border: 1.2px solid #888; border-radius: 50%;
+      filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9));
     }
-    #legend .eye:hover { color: #fff; }
+    #legend .eye::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #ccc; }
+    #legend .eye:hover { border-color: #fff; }
+    #legend .eye:hover::after { background: #fff; }
+    #legend .row.off .eye::after { background: none; }
     #legend .row.off .label { opacity: 0.45; text-decoration: line-through; }
     #legend .row.off .swatch { opacity: 0.3; }
 
@@ -103,49 +169,49 @@
     #brand { display: flex; align-items: center; gap: 10px; opacity: 0.85; }
     #brand img { height: 30px; width: auto; filter: invert(1); flex: none; }
     #brand .text { font-size: 10px; line-height: 1.35; color: #999; }
-    /* Explore button, at the top of the right-hand panel (buildExploreControl). */
-    #explore-box { margin-bottom: 16px; }
+    /* Explore button, at the top of the right-hand panel (buildExploreControl).
+       Flat, still, no looping glow: a pulsing box-shadow is a landing-page
+       "look at me" trope this page doesn't need to borrow. */
+    #explore-box { margin-bottom: var(--sp-4); }
     #explore-btn {
-      width: 100%; padding: 12px 10px; border: none; border-radius: 6px; cursor: pointer;
-      background: #2a78d6; color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
-      box-shadow: 0 0 0 0 rgba(42,120,214,0.6); animation: explore-pulse 2.2s infinite;
+      width: 100%; padding: var(--sp-3) var(--sp-2); border: none; border-radius: var(--radius); cursor: pointer;
+      background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; letter-spacing: 0.3px;
     }
-    #explore-btn:hover { background: #3987e5; }
-    #explore-btn.on { background: #1baf7a; animation: none; box-shadow: 0 0 0 2px rgba(27,175,122,0.35); }
-    #explore-btn.on:hover { background: #22c48b; }
-    @keyframes explore-pulse {
-      0% { box-shadow: 0 0 0 0 rgba(42,120,214,0.55); }
-      70% { box-shadow: 0 0 0 10px rgba(42,120,214,0); }
-      100% { box-shadow: 0 0 0 0 rgba(42,120,214,0); }
-    }
+    #explore-btn:hover { background: var(--accent-hover); }
+    /* A different hue (warm gold, not another green) so "on" reads as a
+       distinct state rather than a shade of the same primary accent. White
+       text on this gold fails contrast (2.9:1, needs 4.5); the deck's own
+       dark neutral (#2b2b2b) gets 4.9:1, so text darkens for this state only. */
+    #explore-btn.on { background: var(--accent-warm); color: #2b2b2b; }
+    #explore-btn.on:hover { background: var(--accent-warm-hover); }
     #infer button {
-      padding: 7px 10px; background: #2a78d6; color: #fff; border: none;
-      border-radius: 4px; font-size: 12px; cursor: pointer;
+      padding: 7px var(--sp-3); background: var(--accent); color: #fff; border: none;
+      border-radius: var(--radius); font-size: 12px; cursor: pointer;
     }
-    #infer button:hover { background: #3987e5; }
+    #infer button:hover { background: var(--accent-hover); }
     #infer button.secondary { background: #3a3a3a; }
     #infer button.secondary:hover { background: #4a4a4a; }
-    #infer-panel { margin-top: 6px; padding: 10px; background: rgba(22,22,22,0.85); border-radius: 4px; }
+    #infer-panel { margin-top: 6px; padding: var(--sp-3); background: rgba(22,22,22,0.85); border-radius: var(--radius); }
     #bl .slider { display: flex; justify-content: space-between; margin: 8px 0 2px; }
-    #bl input[type="range"] { width: 100%; margin: 0; }
+    #bl input[type="range"] { width: 100%; margin: 0; accent-color: var(--accent); }
     #infer-panel .check { display: block; margin: 10px 0; cursor: pointer; }
     #infer-panel .buttons { display: flex; gap: 6px; }
-    #infer-status { margin-top: 8px; color: #9fd; min-height: 1em; }
+    #infer-status { margin-top: 8px; color: var(--accent-ink); min-height: 1em; }
 
     /* Recap card of the clicked point (see "Sub-network of a clicked point"). */
     #recap {
       position: fixed; z-index: 10; width: 290px; max-height: 72vh; overflow-y: auto; box-sizing: border-box;
-      padding: 12px; background: rgba(22,22,22,0.95); border: 1px solid #333; border-radius: 6px;
+      padding: var(--sp-3); background: rgba(22,22,22,0.95); border: 1px solid var(--border); border-radius: var(--radius);
       font: 12px system-ui, sans-serif; color: #ccc;
     }
     #recap .head { display: flex; align-items: center; gap: 8px; }
-    #recap .id { font-size: 15px; font-weight: 600; color: #fff; }
-    #recap .badge { padding: 1px 7px; border-radius: 9px; background: #2a78d6; color: #fff; font-size: 11px; }
+    #recap .id { font-size: 15px; font-weight: 600; color: #fff; font-family: var(--mono); }
+    #recap .badge { padding: 1px 7px; border-radius: var(--radius); background: var(--accent); color: #fff; font-size: 11px; }
     #recap .close { margin-left: auto; background: none; border: none; color: #aaa; font-size: 16px; line-height: 1; cursor: pointer; }
     #recap .close:hover { color: #fff; }
     #recap .loc { margin: 6px 0 2px; color: #fff; }
     #recap .muted { color: #888; }
-    #recap h4 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #9fd; }
+    #recap h4 { margin: 12px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--accent-ink); }
     #recap .bd { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
     #recap .list { max-height: 190px; overflow-y: auto; margin-top: 4px; border-top: 1px solid #2a2a2a; padding-top: 4px; }
     #recap .li { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; white-space: nowrap; }
@@ -295,13 +361,20 @@
     }
 
     // --- Build the filter panel DOM from filters.json ---
+    function countSpan(count) {
+      const s = document.createElement('span');
+      s.className = 'count';
+      s.textContent = `(${count.toLocaleString()})`;
+      return s;
+    }
+
     function checkbox(id, label, count) {
       const wrap = document.createElement('label');
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.id = id;
       wrap.appendChild(cb);
-      wrap.append(`${label} (${count.toLocaleString()})`);
+      wrap.append(`${label} `, countSpan(count));
       return wrap;
     }
 
@@ -425,7 +498,7 @@
       cb.id = id;
       const frag = document.createDocumentFragment();
       frag.appendChild(cb);
-      frag.append(` ${label} (${count.toLocaleString()})`);
+      frag.append(` ${label} `, countSpan(count));
       return frag;
     }
 
@@ -664,9 +737,6 @@
     // and any city added by inference. Each row has an eye button that dims
     // that entry's points (grey, low opacity). Dimming only recolours: no
     // re-layout, positions don't move. ---
-    const ICON_EYE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
-    const ICON_EYE_OFF = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-
     function registerKey(vs, key) {
       let i = vs.keyIndex.get(key);
       if (i === undefined) { i = vs.keys.length; vs.keys.push(key); vs.keyIndex.set(key, i); }
@@ -691,7 +761,6 @@
       const sync = () => {
         const off = !!vs.dimFlag[ki];
         row.className = (off ? 'row off' : 'row') + (groupStart ? ' group-start' : '');
-        btn.innerHTML = off ? ICON_EYE_OFF : ICON_EYE;
         btn.title = off ? 'Show these points again' : 'Dim these points';
       };
       btn.addEventListener('click', () => {
