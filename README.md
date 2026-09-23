@@ -1,6 +1,6 @@
 # Social Graph
 
-**[Open the live visualization →](https://leandrej64.github.io/social-graph/)**
+**[Live visualization](https://leandrej64.github.io/social-graph/)**
 
 ## Overview
 
@@ -37,7 +37,7 @@ For more on the underlying force-directed algorithm, see [cosmos.gl's docs](http
   ![City clusters](assets/clusters.png)
   *Clusters accross germany and the us*
 
-- **Inferring unknown locations from social neighbourhoods.** A basic heuristic is built into the tool: for a following with an unknown location, assign it a location *l* if the seed(s) reaching it already follow a large-enough share of profiles located in *l* (with an optional correction for a city's relative size, so large cities don't win purely by being large). This is meant for exploring the inference visually — check "Unknown Location" and tune the parameters in the panel to see it in action.
+- **Inferring unknown locations from social neighbourhoods.** A basic heuristic is built into the tool: for a following with an unknown location, assign it a location *l* if the seed(s) reaching it already follow a large-enough share of profiles located in *l* (with an optional correction for a city's relative size, so large cities don't win purely by being large. This is the *alpha* parameter, correcting each city's count by its share of the country's profiles raised to the power −alpha; 0, the default, means no correction). This is meant for exploring the inference visually — check "Unknown Location" and tune the parameters in the panel to see it in action. 
 - **Flowers** — the canonical example of profiles discovered through a single seed. A "flower" is a small cluster loosely attached to the main graph, with few connections to any cluster's centre, suggesting a borderline placement. Their presence is a rough gauge of scraping saturation: as long as flowers keep appearing, there's still room for the scrape to grow further.
 
   ![A flower: a seed's followings, loosely attached to the main graph](assets/us_flower.png)
@@ -47,6 +47,10 @@ For more on the underlying force-directed algorithm, see [cosmos.gl's docs](http
 
   ![New York profiles clumped together despite having no edges between them](assets/nyc_aggregate.png)
   *The New York aggregate : spread accross the whole graph*
+
+## Help wanted: smooth exploration on large views
+
+Edges are currently not drawn as soon as "Unknown Location" is part of the selection: that pushes the view past roughly 200k nodes and 500k edges, and at that size rendering the edges makes navigation and Explore mode lag badly. If you find a way to keep exploration smooth at that scale *with* edges displayed, I would love to hear about it. 
 
 ## Credits
 
